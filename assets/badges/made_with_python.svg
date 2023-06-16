@@ -7,7 +7,6 @@
     </g>
     <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif"
         text-rendering="geometricPrecision" font-size="100">
-
         <text transform="scale(.1)" x="434.25" y="175" textLength="712.5" fill="#fff">MADE WITH</text>
         <text transform="scale(.1)" x="1260" y="175" textLength="535" fill="#fff" font-weight="bold">
             PYTHON </text>
