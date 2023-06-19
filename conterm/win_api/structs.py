@@ -41,9 +41,23 @@ class ControlKeyState(Enum):
     Shift = 0x0010
 
     @staticmethod
-    def is_control(flag: int):
-        return flag & ControlKeyState.LeftCtrl.value or flag & ControlKeyState.RightCtrl.value
-    
+    def ctrl(flag: int) -> bool:
+        return (
+            ControlKeyState.LeftCtrl.value & flag != 0
+            or ControlKeyState.RightCtrl.value & flag != 0
+        )
+
+    @staticmethod
+    def alt(flag: int) -> bool:
+        return (
+            ControlKeyState.LeftAlt.value & flag != 0
+            or ControlKeyState.RightAlt.value & flag != 0
+        )
+
+    @staticmethod
+    def shift(flag: int) -> bool:
+        return ControlKeyState.Shift.value & flag != 0
+
     @staticmethod
     def from_flags(flag: int) -> tuple["ControlKeyState", ...]:
         if flag > 0:
@@ -90,8 +104,11 @@ class KeyEvent:
         "scan_code",
         "char",
         "modifiers",
-        "literal"
+        "literal",
     )
+
+    def __eq__(self, obj) -> bool:
+        return isinstance(obj, KeyEvent) and obj.char == self.char
 
     def __init__(self, event: KEY_EVENT) -> None:
         self.key_down: bool = event.bKeyDown != 0
@@ -102,13 +119,24 @@ class KeyEvent:
         self.literal = Char(event.uChar)
         # TODO: Parse into enum
         self.modifiers = event.dwControlKeyState
-        if self.modifiers & ControlKeyState.Shift.value:
+        if ControlKeyState.Shift.value & self.modifiers:
             self.char = str(self.char).upper()[0]
+
+    def shift(self) -> bool:
+        return ControlKeyState.shift(self.modifiers)
+
+    def ctrl(self) -> bool:
+        return ControlKeyState.ctrl(self.modifiers)
+
+    def alt(self) -> bool:
+        return ControlKeyState.alt(self.modifiers)
 
     def __win32_repr__(self, indent: int = 0) -> list[str]:
         pressed = "down" if self.key_down else "up"
         offset = " " * indent
-        ctrl = '|'.join(pkeyword(flag.name) for flag in ControlKeyState.from_flags(self.modifiers))
+        ctrl = "|".join(
+            pkeyword(flag.name) for flag in ControlKeyState.from_flags(self.modifiers)
+        )
         return [
             f"{klass('KeyEvent')}{OP}",
             f"{offset}  \x1b[35m{pressed}\x1b[39m,",
@@ -159,6 +187,7 @@ class MouseEventType(Enum):
             return tuple([ftype for ftype in MouseEventType if ftype.value & flag])
         return tuple()
 
+
 class MouseEvent:
     __slots__ = ("pos", "button_state", "modifiers", "event_flags")
 
@@ -166,14 +195,17 @@ class MouseEvent:
         self.pos = (event.dwMousePosition.X, event.dwMousePosition.Y)
         self.button_state = event.dwButtonState
         self.modifiers = event.dwControlKeyState
-        print('{0:b}'.format(self.modifiers))
         # TODO: Parse into list of enums
         self.event_flags = event.dwEventFlags
 
     def __win32_repr__(self, indent: int = 0) -> list[str]:
         offset = " " * indent
-        btn = '|'.join(pkeyword(flag.name) for flag in ButtonState.from_flags(self.button_state))
-        ctrl = '|'.join(pkeyword(flag.name) for flag in ControlKeyState.from_flags(self.modifiers))
+        btn = "|".join(
+            pkeyword(flag.name) for flag in ButtonState.from_flags(self.button_state)
+        )
+        ctrl = "|".join(
+            pkeyword(flag.name) for flag in ControlKeyState.from_flags(self.modifiers)
+        )
         return [
             f"{klass('MouseEvent')}{OP}",
             f"{offset}  {attr('pos')}={ptuple(self.pos)},",
