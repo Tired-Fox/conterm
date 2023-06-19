@@ -1,6 +1,7 @@
 from ctypes.wintypes import RECT, SMALL_RECT
 from typing import Any
 from ctypes import LibraryLoader, WinDLL
+from .controller import Controller
 import sys
 
 windll: Any = None

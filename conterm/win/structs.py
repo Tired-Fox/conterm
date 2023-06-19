@@ -29,7 +29,7 @@ OB = "\x1b[38;5;243m[\x1b[39m"
 CB = "\x1b[38;5;243m]\x1b[39m"
 
 
-class ControlKeyState(Enum):
+class Mod(Enum):
     CapsLock = 0x0080
     Enhanced = 0x0100
     LeftAlt = 0x0002
@@ -43,25 +43,25 @@ class ControlKeyState(Enum):
     @staticmethod
     def ctrl(flag: int) -> bool:
         return (
-            ControlKeyState.LeftCtrl.value & flag != 0
-            or ControlKeyState.RightCtrl.value & flag != 0
+            Mod.LeftCtrl.value & flag != 0
+            or Mod.RightCtrl.value & flag != 0
         )
 
     @staticmethod
     def alt(flag: int) -> bool:
         return (
-            ControlKeyState.LeftAlt.value & flag != 0
-            or ControlKeyState.RightAlt.value & flag != 0
+            Mod.LeftAlt.value & flag != 0
+            or Mod.RightAlt.value & flag != 0
         )
 
     @staticmethod
     def shift(flag: int) -> bool:
-        return ControlKeyState.Shift.value & flag != 0
+        return Mod.Shift.value & flag != 0
 
     @staticmethod
-    def from_flags(flag: int) -> tuple["ControlKeyState", ...]:
+    def from_flags(flag: int) -> tuple["Mod", ...]:
         if flag > 0:
-            return tuple([ftype for ftype in ControlKeyState if ftype.value & flag])
+            return tuple([ftype for ftype in Mod if ftype.value & flag])
         return tuple()
 
 
@@ -119,23 +119,23 @@ class KeyEvent:
         self.literal = Char(event.uChar)
         # TODO: Parse into enum
         self.modifiers = event.dwControlKeyState
-        if ControlKeyState.Shift.value & self.modifiers:
+        if Mod.Shift.value & self.modifiers:
             self.char = str(self.char).upper()[0]
 
     def shift(self) -> bool:
-        return ControlKeyState.shift(self.modifiers)
+        return Mod.shift(self.modifiers)
 
     def ctrl(self) -> bool:
-        return ControlKeyState.ctrl(self.modifiers)
+        return Mod.ctrl(self.modifiers)
 
     def alt(self) -> bool:
-        return ControlKeyState.alt(self.modifiers)
+        return Mod.alt(self.modifiers)
 
     def __win32_repr__(self, indent: int = 0) -> list[str]:
         pressed = "down" if self.key_down else "up"
         offset = " " * indent
         ctrl = "|".join(
-            pkeyword(flag.name) for flag in ControlKeyState.from_flags(self.modifiers)
+            pkeyword(flag.name) for flag in Mod.from_flags(self.modifiers)
         )
         return [
             f"{klass('KeyEvent')}{OP}",
@@ -204,7 +204,7 @@ class MouseEvent:
             pkeyword(flag.name) for flag in ButtonState.from_flags(self.button_state)
         )
         ctrl = "|".join(
-            pkeyword(flag.name) for flag in ControlKeyState.from_flags(self.modifiers)
+            pkeyword(flag.name) for flag in Mod.from_flags(self.modifiers)
         )
         return [
             f"{klass('MouseEvent')}{OP}",
