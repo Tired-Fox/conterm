@@ -1,56 +1,28 @@
-import msvcrt
-from typing import Any, AnyStr
+from conterm.input import InputManager, Mouse, KEY, eprint
+from conterm.input.keys import sys
 
-# These are wrappers around Win32 API methods that I wrote.
-from conterm.win import enable_virtual_processing
-
-# These methods are directly copied from `pytermgui` getch logic
-def _ensure_str(string: AnyStr) -> str:
-    """Ensures return value is always a `str` and not `bytes`.
-
-    Args:
-        string: Any string or bytes object.
-
-    Returns:
-        The string argument, converted to `str`.
-    """
-
-    if isinstance(string, bytes):
-        return string.decode("utf-8", "ignore")
-
-    return string
-
-def get_chars() -> str:
-    """Reads characters from sys.stdin.
-
-    Returns:
-        All read characters.
-    """
-    if not msvcrt.kbhit():
-        return ""
-
-    char = msvcrt.getch()  # type: ignore
-    if char == b"\xe0":
-        char = "\x1b"
-
-    buff = _ensure_str(char)  # type: ignore
-
-    while msvcrt.kbhit():
-        char = msvcrt.getch()  # type: ignore
-        buff += _ensure_str(char)
-
-    return buff
-
-def getch() -> Any:
-    key = get_chars()
-    if key == chr(3):
-        raise KeyboardInterrupt
-    return key
+Event = Mouse.Event
+Button = Mouse.Button
 
 if __name__ == "__main__":
-    with enable_virtual_processing():
-        # While no interupt, read key and mouse events
-        while True:
-            if (key := getch()) != "":
-                print(repr(key))
+    # Can build a key code from a chord.
+    # The code is only valid key codes returns none if it can't
+    # generate a valid code.
+    print(repr(KEY.by_chord("alt+S")))
 
+    for record in InputManager().watch(False, True):
+        if record == "KEY":
+            # Can compare key events with strings
+            if record.key == "ctrl+alt+d":
+                print("Exit")
+                sys.exit(3)
+            eprint(record.key)
+        elif record == "MOUSE":
+            mouse = record.mouse
+            if Event.DRAG_MIDDLE_CLICK in mouse:
+                eprint(mouse)
+            elif (
+                mouse.event_of(Event.CLICK, Event.RELEASE)
+                and mouse.button == Button.RIGHT
+            ):
+                eprint(record.mouse)

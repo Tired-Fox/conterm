@@ -6,15 +6,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 import re
-from typing import Literal
+from typing import Literal, Protocol, runtime_checkable
 
 from conterm.input.keys import KEY
 
 ANSI = re.compile(
-    r"(?P<sequence>\x1b\[(?P<data>(?:\d{1,3};?)*)(?P<event>[ACBDmMZFHPQRS~]{1,2})?)|(\x1b(?![PQRS]))|(?P<key>.{1,3}|[\n\r\t])"
+    r"(?P<sequence>\x1b\[(?P<data>(?:\d{1,3};?)*)(?P<event>[ACBDmMZFHPQRS~]{1,2})?)|(\x1b(?!O))|(?P<key>.{1,3}|[\n\r\t])"
 )
 # sequence, data, event, key
-MOUSE = re.compile(r"(?:\[<(.+)([ACBDFHMZm~]))")
+MOUSE = re.compile(r"\[<(.+)([ACBDFHMZmM~])")
 # data, event
 
 
@@ -26,72 +26,119 @@ class Modifiers:
 
 
 class Mouse:
+    """A Mouse Event. All information relating to an event of a mouse input."""
+
+    __slots__ = ("modifiers", "events", "button", "code", "pos")
+
     def __init__(
         self,
         code: str = "",
     ):
         self.modifiers = 0
-        self.type: Mouse.Event = Mouse.Event.Empty
-        self.button: Mouse.Button = Mouse.Button.Empty
+        self.events: dict[str, Mouse.Event] = {}
+        self.button: Mouse.Button = Mouse.Button.EMPTY
         self.code = code
         self.pos = (-1, -1)
 
-        if (match := MOUSE.match(code)) is not None:
-            data, event = match.groups()
-            data = data.split(";")
-            if (button := int(data[0])) in [0, 1, 2]: 
-                match event:
-                    case "M":
-                        self.type = Mouse.Event.Click
-                    case "m":
-                        self.type = Mouse.Event.Release
-                self.button = Mouse.Button(button)
-            elif (dir := int(data[0])) in [65, 64]:
-                self.type = Mouse.Event(dir)
-            elif (t := int(data[0])) in  [35, 32]:
-                self.type = Mouse.Event(t)
-                if len(data[1:]) < 2:
-                    raise ValueError(f"Invalid mouse move sequence: {code}")
-                self.pos = (int(data[1]), int(data[2]))
-            else:
-                raise ValueError(f"Invalid mouse sequence: {code!r}")
-                
+        events = filter(lambda x: x != "", code.split("\x1b"))
+        for event in events:
+            if (match := MOUSE.match(event)) is not None:
+                data, event = match.groups()
+
+                data = data.split(";")
+                if (button := int(data[0])) in [0, 1, 2]:
+                    match event:
+                        case "M":
+                            self.events[Mouse.Event.CLICK.name] = Mouse.Event.CLICK
+                        case "m":
+                            self.events[Mouse.Event.RELEASE.name] = Mouse.Event.RELEASE
+                    self.button = Mouse.Button(button)
+                elif (scroll := int(data[0])) in [65, 64]:
+                    event = Mouse.Event(scroll)
+                    self.events[event.name] = event
+                elif (move := int(data[0])) == 35:
+                    event = Mouse.Event(move)
+                    self.events[event.name] = event
+                    if len(data[1:]) < 2:
+                        raise ValueError(f"Invalid mouse move sequence: {code}")
+                    self.pos = (int(data[1]), int(data[2]))
+                elif (drag := int(data[0])) in [32, 33, 34]:
+                    event = Mouse.Event(drag)
+                    self.events.update(
+                        {Mouse.Event.DRAG.name: Mouse.Event.DRAG, event.name: event}
+                    )
+                    if len(data[1:]) < 2:
+                        raise ValueError(f"Invalid mouse move sequence: {code}")
+                    self.pos = (int(data[1]), int(data[2]))
+                else:
+                    raise ValueError(f"Invalid mouse sequence: {code!r}")
+
+    def __contains__(self, key: Mouse.Event) -> bool:
+        if isinstance(key, Mouse.Event):
+            return key.name in self.events
+        return False
+
+    def __eq__(self, __value: object) -> bool:
+        if isinstance(__value, Mouse):
+            return (
+                __value.events == self.events
+                and __value.pos == self.pos
+                and __value.button == self.button
+            )
+        return False
 
     class Event(Enum):
-        Empty = -1
-        Click = 0
-        Release = 1
-        Move = 35
-        Drag = 32
-        ScrollUp = 64
-        ScrollDown = 65
+        """Mouse event types."""
+
+        CLICK = 0
+        RELEASE = 1
+        DRAG = 2
+        MOVE = 35
+        DRAG_RIGHT_CLICK = 34
+        DRAG_LEFT_CLICK = 32
+        DRAG_MIDDLE_CLICK = 33
+        SCROLL_UP = 64
+        SCROLL_DOWN = 65
 
     class Button(Enum):
-        Empty = -1
-        Left = 0
-        Middle = 1
-        Right = 2
+        """Mouse buttons."""
 
-    def __pretty__(self):
-        symbol = self.type.name
-        if self.type in [Mouse.Event.Click, Mouse.Event.Release]:
+        EMPTY = -1
+        LEFT = 0
+        MIDDLE = 1
+        RIGHT = 2
+
+    def event_of(self, *events: Mouse.Event) -> bool:
+        """Check if the mouse event is one of the given mouse events."""
+        return any(event.name in self.events for event in events)
+
+    def __event_to_str__(self, event: Mouse.Event) -> str:
+        symbol = event.name
+        # __contains__ treats a list of events as running any
+        if self.event_of(Mouse.Event.CLICK, Mouse.Event.RELEASE):
             symbol = self.button.name
 
-        match self.type:
-            case Mouse.Event.Click:
+        match self.events:
+            case {"CLICK": _}:
                 symbol = f"\x1b[32m{symbol}\x1b[39m"
-            case Mouse.Event.Release:
+            case {"RELEASE": _}:
                 symbol = f"\x1b[31m{symbol}\x1b[39m"
 
+        return symbol
+
+    def __eprint__(self):
+        events = f"[{', '.join([self.__event_to_str__(e) for e in self.events.values()])}]"
         position = f" {self.pos}" if self.pos[0] > 0 else ""
-        return f"{symbol}{position}"
+        return f"{events}{position}"
 
     def __repr__(self):
         return f"<Mouse: {self.code!r}>"
 
 
-
 class Key:
+    "A Key Event. All information relating to an event of a keyboard input."
+    __slots__ = ("modifiers", "key", "code")
+
     def __init__(
         self,
         code: str = "",
@@ -105,7 +152,7 @@ class Key:
             self.modifiers |= Modifiers.Alt
 
         # sequence, data, event, key
-        sequence, esc, data, event, key = parts[-1]
+        sequence, data, _, esc, key = parts[-1]
         key = key or esc
         if key != "":
             if (k := KEY.by_code(key)) is not None:
@@ -139,7 +186,7 @@ class Key:
             return __value.code == self.code
         return False
 
-    def __pretty__(self):
+    def __eprint__(self):
         return f"\x1b[33m{self}\x1b[39m"
 
     def __str__(self):
@@ -161,25 +208,41 @@ class Record:
     helper methods to help specify/identify the key.
     """
 
+    __slots__ = ("type", "key", "mouse")
+
     def __init__(self, code: str):
         self.type: Literal["KEY", "MOUSE"] = "KEY"
-        self.event = None
+        self.key = None
+        self.mouse = None
 
         if code.startswith("\x1b[<"):
             self.type = "MOUSE"
-            self.event = Mouse(code)
+            self.mouse = Mouse(code)
         else:
-            self.event = Key(code)
+            self.key = Key(code)
 
     def __eq__(self, other) -> bool:
         if isinstance(other, Record):
             return other.type == self.type
-        elif isinstance(other, str):
+        if isinstance(other, str):
             return other == self.type
+        return False
 
     def __repr__(self) -> str:
-        event = self.event.__pretty__() if self.event is not None else ""
+        event = (self.key or self.mouse).__eprint__()
         return f"<{self.type}: {event}>"
 
-def pprint(event: Key | Mouse):
-    print(event.__pretty__())
+
+@runtime_checkable
+class EPrint(Protocol):
+    """Rules for being able to be a printable event."""
+
+    def __eprint__(self) -> str:
+        ...
+
+
+def eprint(event: EPrint):
+    """Pritty print a input event to stdout."""
+    if not isinstance(event, EPrint):
+        raise TypeError(f"{event.__class__} does not implement __eprint__")
+    print(event.__eprint__())

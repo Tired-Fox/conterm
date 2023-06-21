@@ -2,7 +2,8 @@ from contextlib import contextmanager
 from typing import Generator
 import sys
 
-from conterm.input.event import Record
+from .event import Record, Mouse, Key, eprint
+from .keys import KEY
 
 if sys.platform == "win32":
     from .win import terminal_setup, terminal_reset, read, read_ready
@@ -69,20 +70,21 @@ class InputManager:
             terminal_reset(self.data)
             self.data = None
 
-def watch(interupt: bool = True, surpress: bool = False) -> Generator:
-    """Get characters until keyboard interupt. Blocks until next char is available.
+    def watch(self, interupt: bool = True, surpress: bool = False) -> Generator:
+        """Get characters until keyboard interupt. Blocks until next char is available.
 
-    Args:
-        interupt: Whether to allow for default keyboard interrupts. Defaults to True
-        surpress: Whether to supress input warnings. Defaults to False
-    """
-    if not surpress and not interupt:
-        print(
-            "\x1b[1m[\x1b[33mWARN\x1b[39m]\x1b[22m:",
-            "Exit/Interupt case is not being handled. Make sure to handle exiting the input loop"
-        )
-    with InputManager() as manager:
+        Args:
+            interupt: Whether to allow for default keyboard interrupts. Defaults to True
+            surpress: Whether to supress input warnings. Defaults to False
+        """
+
+        if not surpress and not interupt:
+            print(
+                "\x1b[1m[\x1b[33mWARN\x1b[39m]\x1b[22m:",
+                "Exit/Interupt case is not being handled. Make sure to handle exiting the input loop"
+            )
+
         while True:
-            char = manager.getch(interupt)
+            char = self.getch(interupt)
             if char != "":
                 yield Record(char)
