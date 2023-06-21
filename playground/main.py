@@ -1,36 +1,56 @@
-from conterm.keys import KeyCode
-from conterm.win import Controller
-from conterm.win.console import GetConsoleInfo, GetConsoleSize, GetCursorPos, stdout
-from conterm.win.input import Key, Modifiers, Mouse, ReadInput
-from conterm.win.structs import KEY_EVENT, EventType
+import msvcrt
+from typing import Any, AnyStr
+
+# These are wrappers around Win32 API methods that I wrote.
+from conterm.win import enable_virtual_processing
+
+# These methods are directly copied from `pytermgui` getch logic
+def _ensure_str(string: AnyStr) -> str:
+    """Ensures return value is always a `str` and not `bytes`.
+
+    Args:
+        string: Any string or bytes object.
+
+    Returns:
+        The string argument, converted to `str`.
+    """
+
+    if isinstance(string, bytes):
+        return string.decode("utf-8", "ignore")
+
+    return string
+
+def get_chars() -> str:
+    """Reads characters from sys.stdin.
+
+    Returns:
+        All read characters.
+    """
+    if not msvcrt.kbhit():
+        return ""
+
+    char = msvcrt.getch()  # type: ignore
+    if char == b"\xe0":
+        char = "\x1b"
+
+    buff = _ensure_str(char)  # type: ignore
+
+    while msvcrt.kbhit():
+        char = msvcrt.getch()  # type: ignore
+        buff += _ensure_str(char)
+
+    return buff
+
+def getch() -> Any:
+    key = get_chars()
+    if key == chr(3):
+        raise KeyboardInterrupt
+    return key
 
 if __name__ == "__main__":
-    print(GetConsoleInfo(stdout))
-    print(GetConsoleSize(stdout))
-    print(GetCursorPos(stdout))
+    with enable_virtual_processing():
+        # While no interupt, read key and mouse events
+        while True:
+            if (key := getch()) != "":
+                print(repr(key))
 
-    modifiers: Modifiers = {"shift": False, "ctrl" : False, "alt": False}
-
-    with Controller() as input:
-        for key in input:
-            pass
-
-    for event in ReadInput():
-        match event.event_type:
-            case EventType.Key:
-                if event.key.is_ascii:
-                    print(event.key)
-
-                # ctrl+c or ctrl+C
-                if event.key.ctrl and event.key.char.lower() == "c":
-                    raise KeyboardInterrupt("user interupt")
-
-            case EventType.Mouse:
-                if not event.mouse.is_event(Mouse.Event.Moved) and event.mouse.pressed(Mouse.Button.Left):
-                    print(f"Left Mouse Click: {event.mouse}")
-            # case EventType.Menu:
-            #     print("Menu Event")
-            # case EventType.Focus:
-            #     print(f"{event.Focus}")
-            # case EventType.Resize:
-            #     print("Window Buffer Size Event")
