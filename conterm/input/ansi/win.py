@@ -1,3 +1,4 @@
+"""Terminal windows specific ansi input logic."""
 import msvcrt
 from typing import IO, Any, AnyStr, cast
 from enum import Enum

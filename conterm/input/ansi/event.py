@@ -8,25 +8,72 @@ from enum import Enum
 import re
 from typing import Literal, Protocol, runtime_checkable
 
-from conterm.input.keys import KEY
+from .keys import keys
 
-ANSI = re.compile(
+__ANSI__ = re.compile(
     r"(?P<sequence>\x1b\[(?P<data>(?:\d{1,3};?)*)(?P<event>[ACBDmMZFHPQRS~]{1,2})?)|(\x1b(?!O))|(?P<key>.{1,3}|[\n\r\t])"
 )
-# sequence, data, event, key
-MOUSE = re.compile(r"\[<(.+)([ACBDFHMZmM~])")
-# data, event
+"""Regex for key event sequences.
+
+Produces (in order):
+    - sequence
+    - data
+    - event
+    - key
+"""
+
+__MOUSE__ = re.compile(r"\[<(.+)([ACBDFHMZmM~])")
+"""Regex for mouse event sequences.
+
+Produces (in order):
+    - data 
+    - event
+"""
 
 
 @dataclass
 class Modifiers:
+    """Custom modifier flags for key events."""
     Ctrl = 0x0001
     Alt = 0x0002
-    Shift = 0x0002
+    Shift = 0x0004
 
+class Event(Enum):
+    """Mouse event types."""
+
+    CLICK = 0
+    """Button click."""
+    RELEASE = 1
+    """Button release."""
+    DRAG = 2
+    """Click and drag."""
+    MOVE = 35
+    """Move mouse."""
+    DRAG_RIGHT_CLICK = 34
+    """Right click and drag."""
+    DRAG_LEFT_CLICK = 32
+    """Left click and drag."""
+    DRAG_MIDDLE_CLICK = 33
+    """Middle click and drag."""
+    SCROLL_UP = 64
+    """Scroll wheel up."""
+    SCROLL_DOWN = 65
+    """Scroll wheel down."""
+
+class Button(Enum):
+    """Mouse buttons."""
+
+    EMPTY = -1
+    """Not button pressed."""
+    LEFT = 0
+    """Left button pressed."""
+    MIDDLE = 1
+    """Middle button pressed."""
+    RIGHT = 2
+    """Right button pressed."""
 
 class Mouse:
-    """A Mouse Event. All information relating to an event of a mouse input."""
+    """A Event. All information relating to an event of a mouse input."""
 
     __slots__ = ("modifiers", "events", "button", "code", "pos")
 
@@ -35,46 +82,55 @@ class Mouse:
         code: str = "",
     ):
         self.modifiers = 0
-        self.events: dict[str, Mouse.Event] = {}
-        self.button: Mouse.Button = Mouse.Button.EMPTY
+        # Can have multiple events. Ex: While dragging a user can click a different
+        # mouse button. This results in a click event and a drag event.
+        self.events: dict[str, Event] = {}
+        self.button: Button = Button.EMPTY
         self.code = code
         self.pos = (-1, -1)
 
         events = filter(lambda x: x != "", code.split("\x1b"))
+        # Iterate through the different mouse sequences
         for event in events:
-            if (match := MOUSE.match(event)) is not None:
+            if (match := __MOUSE__.match(event)) is not None:
+                # Parse the data and button event from the sequence
                 data, event = match.groups()
 
+                # Split data into tuple. First value is the type of mouse event
+                # then the other values are information for that event. 
                 data = data.split(";")
                 if (button := int(data[0])) in [0, 1, 2]:
                     match event:
                         case "M":
-                            self.events[Mouse.Event.CLICK.name] = Mouse.Event.CLICK
+                            self.events[Event.CLICK.name] = Event.CLICK
                         case "m":
-                            self.events[Mouse.Event.RELEASE.name] = Mouse.Event.RELEASE
-                    self.button = Mouse.Button(button)
+                            self.events[Event.RELEASE.name] = Event.RELEASE
+                    self.button = Button(button)
                 elif (scroll := int(data[0])) in [65, 64]:
-                    event = Mouse.Event(scroll)
+                    event = Event(scroll)
                     self.events[event.name] = event
                 elif (move := int(data[0])) == 35:
-                    event = Mouse.Event(move)
+                    event = Event(move)
                     self.events[event.name] = event
                     if len(data[1:]) < 2:
                         raise ValueError(f"Invalid mouse move sequence: {code}")
                     self.pos = (int(data[1]), int(data[2]))
                 elif (drag := int(data[0])) in [32, 33, 34]:
-                    event = Mouse.Event(drag)
+                    event = Event(drag)
                     self.events.update(
-                        {Mouse.Event.DRAG.name: Mouse.Event.DRAG, event.name: event}
+                        {Event.DRAG.name: Event.DRAG, event.name: event}
                     )
                     if len(data[1:]) < 2:
                         raise ValueError(f"Invalid mouse move sequence: {code}")
                     self.pos = (int(data[1]), int(data[2]))
-                else:
-                    raise ValueError(f"Invalid mouse sequence: {code!r}")
 
-    def __contains__(self, key: Mouse.Event) -> bool:
-        if isinstance(key, Mouse.Event):
+    def event_of(self, *events: Event) -> bool:
+        """Check if the mouse event is one of the given mouse events."""
+        return any(event.name in self.events for event in events)
+
+    def __contains__(self, key: Event) -> bool:
+        """Check if an event is in the list of mouse events."""
+        if isinstance(key, Event):
             return key.name in self.events
         return False
 
@@ -87,35 +143,10 @@ class Mouse:
             )
         return False
 
-    class Event(Enum):
-        """Mouse event types."""
-
-        CLICK = 0
-        RELEASE = 1
-        DRAG = 2
-        MOVE = 35
-        DRAG_RIGHT_CLICK = 34
-        DRAG_LEFT_CLICK = 32
-        DRAG_MIDDLE_CLICK = 33
-        SCROLL_UP = 64
-        SCROLL_DOWN = 65
-
-    class Button(Enum):
-        """Mouse buttons."""
-
-        EMPTY = -1
-        LEFT = 0
-        MIDDLE = 1
-        RIGHT = 2
-
-    def event_of(self, *events: Mouse.Event) -> bool:
-        """Check if the mouse event is one of the given mouse events."""
-        return any(event.name in self.events for event in events)
-
-    def __event_to_str__(self, event: Mouse.Event) -> str:
+    def __event_to_str__(self, event: Event) -> str:
         symbol = event.name
         # __contains__ treats a list of events as running any
-        if self.event_of(Mouse.Event.CLICK, Mouse.Event.RELEASE):
+        if self.event_of(Event.CLICK, Event.RELEASE):
             symbol = self.button.name
 
         match self.events:
@@ -127,7 +158,7 @@ class Mouse:
         return symbol
 
     def __eprint__(self):
-        events = f"[{', '.join([self.__event_to_str__(e) for e in self.events.values()])}]"
+        events = f"{{{', '.join([self.__event_to_str__(e) for e in self.events.values()])}}}"
         position = f" {self.pos}" if self.pos[0] > 0 else ""
         return f"{events}{position}"
 
@@ -147,7 +178,7 @@ class Key:
         self.key = ""
         self.code = code
 
-        parts = ANSI.findall(code)
+        parts = __ANSI__.findall(code)
         if len(parts) == 2:
             self.modifiers |= Modifiers.Alt
 
@@ -155,7 +186,7 @@ class Key:
         sequence, data, _, esc, key = parts[-1]
         key = key or esc
         if key != "":
-            if (k := KEY.by_code(key)) is not None:
+            if (k := keys.by_code(key)) is not None:
                 mods = k.split("_")
                 if "CTRL" in mods:
                     self.modifiers |= Modifiers.Ctrl
@@ -166,7 +197,7 @@ class Key:
                 self.key = mods[-1].lower()
             else:
                 self.key = key
-        elif sequence != "" and data != "" and (key := KEY.by_code(sequence)):
+        elif sequence != "" and data != "" and (key := keys.by_code(sequence)):
             mods = key.split("_")
             if "CTRL" in mods:
                 self.modifiers |= Modifiers.Ctrl
@@ -181,7 +212,7 @@ class Key:
 
     def __eq__(self, __value: object) -> bool:
         if isinstance(__value, str):
-            return KEY.by_chord(__value) == self.code
+            return keys.by_chord(__value) == self.code
         elif isinstance(__value, Key):
             return __value.code == self.code
         return False
@@ -192,8 +223,8 @@ class Key:
     def __str__(self):
         ctrl = "ctrl+" if self.modifiers & Modifiers.Ctrl else ""
         alt = "alt+" if self.modifiers & Modifiers.Alt else ""
-        if self.key in KEY:
-            return f"{ctrl}{alt}{KEY.by_code(self.key)}"
+        if self.key in keys:
+            return f"{ctrl}{alt}{keys.by_code(self.key)}"
         return f"{ctrl}{alt}{self.key}"
 
     def __repr__(self):
@@ -242,7 +273,7 @@ class EPrint(Protocol):
 
 
 def eprint(event: EPrint):
-    """Pritty print a input event to stdout."""
+    """Pretty print a input event to stdout."""
     if not isinstance(event, EPrint):
         raise TypeError(f"{event.__class__} does not implement __eprint__")
     print(event.__eprint__())

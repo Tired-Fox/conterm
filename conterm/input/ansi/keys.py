@@ -1,6 +1,5 @@
 """Helper for getting key names and key codes."""
 import sys
-import re
 from typing import ItemsView, KeysView, ValuesView
 
 if sys.platform == "win32":
@@ -154,4 +153,4 @@ class KeyCode:
         """List of key name to key code pairs."""
         return self._keys.items()
 
-KEY = KeyCode()
+keys = KeyCode()

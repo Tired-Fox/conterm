@@ -1,3 +1,4 @@
+"""Terminal unix specific ansi input logic."""
 from codecs import getincrementaldecoder
 import os
 from select import select

@@ -1,90 +1,15 @@
-from contextlib import contextmanager
-from typing import Generator
-import sys
+"""Python terminal input.
 
-from .event import Record, Mouse, Key, eprint
-from .keys import KEY
+Right now the input is focused around ansi codes. In the future a more low level
+approach may be implemented for more fine tuned control. The idea around this would
+be something similar to [pynput](https://github.com/moses-palmer/pynput). Pynput
+uses platform specific API's to read keyboard and mouse input for the console. Ex: Win32's
+`ReadConsoleInput`.
 
-if sys.platform == "win32":
-    from .win import terminal_setup, terminal_reset, read, read_ready
-elif sys.platform == "linux":
-    from .linux import terminal_setup, terminal_reset, read, read_ready
-else:
-    raise ImportError(f"Unsupported platform: {sys.platform}")
+When the above portion is implemented the input module will be split into the new `raw` module
+and the current 'ansi' module.
+"""
 
-
-
-@contextmanager
-def terminal_input():
-    """Enable virtual terminal sequence processing for windows."""
-    data = terminal_setup()
-    try:
-        yield
-    except Exception as error:
-        raise error
-    finally:
-        terminal_reset(data)
-
-
-class InputManager:
-    """Manager that handles getting characters from stdin."""
-
-    def __init__(self):
-        self.data = terminal_setup()
-
-    def _read_buff_(self) -> Generator:
-        """Read characters from the buffer until none are left."""
-        try:
-            yield read(1)
-
-            while read_ready(sys.stdin):
-                yield read(1)
-        finally:
-            pass
-
-    def getch(self, interupt: bool = True) -> str:
-        """Get the next character. Blank if no next character.
-
-        Args:
-            interupt: Whether to allow for default keyboard interrupts. Defaults to True
-        """
-
-        char = "".join(self._read_buff_())
-        try:
-            if char == chr(3):
-                raise KeyboardInterrupt
-        except:
-            if interupt:
-                raise KeyboardInterrupt("Unhandled Interupt")
-        return char
-
-    def __del__(self):
-        if self.data is not None:
-            terminal_reset(self.data)
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_):
-        if self.data is not None:
-            terminal_reset(self.data)
-            self.data = None
-
-    def watch(self, interupt: bool = True, surpress: bool = False) -> Generator:
-        """Get characters until keyboard interupt. Blocks until next char is available.
-
-        Args:
-            interupt: Whether to allow for default keyboard interrupts. Defaults to True
-            surpress: Whether to supress input warnings. Defaults to False
-        """
-
-        if not surpress and not interupt:
-            print(
-                "\x1b[1m[\x1b[33mWARN\x1b[39m]\x1b[22m:",
-                "Exit/Interupt case is not being handled. Make sure to handle exiting the input loop"
-            )
-
-        while True:
-            char = self.getch(interupt)
-            if char != "":
-                yield Record(char)
+# Import ansi module as base logic for input
+# This is only until raw input is implemented 
+from .ansi import *
