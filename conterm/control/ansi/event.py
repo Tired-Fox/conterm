@@ -100,11 +100,10 @@ class Mouse:
                 # then the other values are information for that event. 
                 data = data.split(";")
                 if (button := int(data[0])) in [0, 1, 2]:
-                    match event:
-                        case "M":
-                            self.events[Event.CLICK.name] = Event.CLICK
-                        case "m":
-                            self.events[Event.RELEASE.name] = Event.RELEASE
+                    if event == "M":
+                        self.events[Event.CLICK.name] = Event.CLICK
+                    elif event == "m":
+                        self.events[Event.RELEASE.name] = Event.RELEASE
                     self.button = Button(button)
                 elif (scroll := int(data[0])) in [65, 64]:
                     event = Event(scroll)
@@ -149,11 +148,10 @@ class Mouse:
         if self.event_of(Event.CLICK, Event.RELEASE):
             symbol = self.button.name
 
-        match self.events:
-            case {"CLICK": _}:
-                symbol = f"\x1b[32m{symbol}\x1b[39m"
-            case {"RELEASE": _}:
-                symbol = f"\x1b[31m{symbol}\x1b[39m"
+        if Event.CLICK in self.events:
+            symbol = f"\x1b[32m{symbol}\x1b[39m"
+        elif Event.RELEASE in self.events:
+            symbol = f"\x1b[31m{symbol}\x1b[39m"
 
         return symbol
 

@@ -1,4 +1,4 @@
-from conterm.input import Key, Mouse, Event, Button, Listener, eprint, keys
+from conterm.control import Key, Mouse, Event, Button, Listener, eprint, keys
 
 def on_key(event: Key) -> bool | None:
     """Handler for key events."""
