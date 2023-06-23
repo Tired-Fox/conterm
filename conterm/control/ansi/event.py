@@ -271,7 +271,7 @@ class EPrint(Protocol):
 
 
 def eprint(event: EPrint):
-    """Pretty print a input event to stdout."""
+    """Pretty print an input event to stdout."""
     if not isinstance(event, EPrint):
         raise TypeError(f"{event.__class__} does not implement __eprint__")
     print(event.__eprint__())
