@@ -1,7 +1,7 @@
 import contextlib
 from io import StringIO
 from typing import Any, Callable, Literal, overload
-from functools import wraps, _Wrapped
+from functools import wraps
 
 # Trick type system to think a string is returned if result is set to False
 @overload
@@ -63,7 +63,7 @@ try:
     import click
 
     @catch_stdout(result=False)
-    def run_cli(entry: click.Group | click.Command, cmd: list[str] | str):
+    def run_click(entry: click.Group | click.Command, cmd: list[str] | str):
         """Method that runs a click command/group with a cmd and returns
         the stdout, if there is one.
 
