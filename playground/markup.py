@@ -9,21 +9,30 @@ All macros are automatically closed at the end of the string
 
 Ansi Open Operations:
     - Styling
-        - `fg=color` Foreground color
-        - `bg=color` Background Color
-        - `color=color` Both foreground and background color
+        - `r,g,b|#rrggbb|#rgb|xterm|system` Foreground color
+        - `@<color>` Background Color
         - `i` italisize
         - `b` bold
         - `u` underline
         - `s` strikethrough
-    - `url` sets next text as hypertext and as the link. Can use `=` to set link
-    - `{name}` uses a custom macro provided by the user
-    - `stash` stashes styling. Can use `=` to give a name to the stash
-    - `pop` pops a stashed style. Can use `=` to pop a specific stash
+        - `d` dim
+        - `r` reverse
+        - `sb` slow blink
+        - `rb` rapid blink
+    - `~<url>` sets next text as hypertext
+    - `<custom>` uses a custom macro provided by the user. Token that isn't a sys color
+    - `stash` stashes styling current styling, doesn't include current macro that it is in.
+    - `pop` pops the top stashed macro
 
 Ansi close Operations (`/`):
     - Use respective symbol to reset/close/end that macro/ansi operations
     - Empty `/` without any symbols resets all styling
+
+TODO:
+    - [ ] Parse alignment with `[<^>]{size}`. Left, center, right respecively followed
+        by the width in characters
+    - [ ] Parse stash and pop
+    - [ ] Add support for terminal color mode detection
 """
 from __future__ import annotations
 from conterm.markup import Markup

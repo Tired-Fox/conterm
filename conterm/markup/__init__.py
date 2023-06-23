@@ -38,9 +38,6 @@ MACRO = re.compile(r"(?<!\\)\[[^\]]+(?<!\\)\]")
 
 __all__ = ["Markup", "Macro", "Color", "Hyperlink"]
 
-# TODO: Todo
-# - Parse alignment with `<^>` followed by size
-# - Parse stash and pop
 class Markup:
     def __init__(self, customs: list[Callable|tuple[str,Callable]] | None = None) -> None:
         self.markup = ""
