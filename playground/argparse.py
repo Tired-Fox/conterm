@@ -1,74 +1,28 @@
-"""
-Resources:
-    [Typer]()
-    [Click]()
-    [CMD2]()
+import click
+from conterm.wrapper import run_cli
 
-Features:
-    - tab completion (generate on first run)
-    - gracefull exit
-    - help message from any sub command
-    - pass argument string
+@click.group()
+def cli():
+    """A test cli tool."""
 
-<command>
-    nested commands
+@cli.group("set")
+def set_env():
+    """Set program environment variables."""
 
-option (-s, --something)
-argument (named, list, single, assignment or flag)
+@set_env.command()
+def client():
+    """Set the programs client."""
+    print("set client")
 
-Commands:
-    - set
-        - client
-        - database
-    - collect
-        - find
-        - from
-        - --name
-    - list
-    - load
-    - intersect
-    - run/done
-    - show
-"""
-
-
-class Action:
-    def __init__(self, callback):
-        self._callback_ = callback
-
-    def run():
-        pass
-
-COMMANDS = {
-    "set": {
-        "_type_": "parent",
-        "_help_": "Set base application interfaces",
-        "client": {},
-        "database": {},
-    },
-    "collect": {},
-    "list": {},
-    "load": {},
-    "intersect": {},
-    "done": {},
-    "show": {}
-}
-
-CMDS = [
-    "set client typedb_client",
-    "set database typedb_client",
-    "collect find ip 192.* --name local_ips",
-    "collect find hunt.has.tag --name csc2_hunts",
-    "collect from csc2_hunts find hunt.players.found.ip --name csc2_hunts",
-    "list collections",
-    "load plugin compare_things",
-    "intersect local_ips csc2_hunts --name local_csc2_ips",
-    "done", # Maybe a better name
-    "show local_csc2_ips",
-]
+@set_env.command()
+def database():
+    """Set the programs database."""
+    print("set database")
 
 if __name__ == "__main__":
-    for cmd in CMDS:
-        print(cmd.replace("  ", " ").split(" "))
-
-
+    output = run_cli("set")
+    if len(output) > 0:
+        print("OUTPUT:", output)
+    output = run_cli("set client")
+    if len(output) > 0:
+        print("OUTPUT:", output)

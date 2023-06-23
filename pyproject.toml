@@ -16,7 +16,7 @@ classifiers = [
   "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.9"
 dependencies = []
 
 [project.optional-dependencies]
@@ -28,11 +28,12 @@ dev = [
   "black",
   "ruff",
   "requests"
-]
+],
+click = ["click"]
 
 [project.urls]
-"Homepage" = "https://github.com/Tired-Fox/conterm"
-"Website" = "https://tired-fox.github.io/conterm/"
+"Github" = "https://github.com/Tired-Fox/conterm"
+# "Website" = "https://tired-fox.github.io/conterm/"
 
 [project.scripts]
 
