@@ -17,12 +17,19 @@ Todo:
         - [ ] Code Blocks?
             - Using a langauge parser
 """
+from collections.abc import Callable
+from functools import wraps
 import re
 from typing import TYPE_CHECKING
 
 from .macro import CustomMacros, Macro, RESET
 from .color import Color
 from .hyperlink import Hyperlink
+
+def sort_customs(custom: tuple[str, Callable]):
+    if not hasattr(custom[1], "__custom_modify__"):
+        return 3
+    return 2 if getattr(custom[1], "__custom_modify__") else 1
 
 if TYPE_CHECKING:
     from _typeshed import SupportsWrite
@@ -31,11 +38,41 @@ MACRO = re.compile(r"(?<!\\)\[[^\]]+(?<!\\)\]")
 
 __all__ = ["Markup", "Macro", "Color", "Hyperlink"]
 
-
+# TODO: Todo
+# - Parse alignment with `<^>` followed by size
+# - Parse stash and pop
 class Markup:
-    def __init__(self) -> None:
+    def __init__(self, customs: list[Callable|tuple[str,Callable]] | None = None) -> None:
         self.markup = ""
         self._result_ = ""
+        self._customs_: CustomMacros = {}
+        for custom in customs or []:
+            if isinstance(custom, tuple):
+                self._customs_[custom[0]] = custom[1]
+            else:
+                self._customs_[custom.__name__] = custom
+
+        self._stash_ = {}
+        self._stash_stack_ = []
+
+    def stash(self, macro: Macro, name: str = ""):
+        if name == "":
+            name = f"{macro.macro}-{len(self._stash_stack_)}"
+        self._stash_[name] = macro
+        self._stash_stack_.append(name)
+
+    def pop(self, key: str | None = None) -> Macro | None:
+        """Pop a stashed macro from the stack. Optionally pop a named stashed macro.
+        
+        Returns:
+            None when there are no macro's to pop
+        """
+        if key is None:
+            return self._stash_.pop(self._stash_stack_.pop())
+
+        index = self._stash_stack_.index(key)
+        self._stash_stack_.pop(index)
+        return self._stash_.pop(key)
 
     def feed(self, markup: str, *, sep: str = ""):
         """Feed/give the parser more markup to handle.
@@ -50,7 +87,7 @@ class Markup:
         return self.markup
 
     def __tokenize__(
-        self, markup: str, _: CustomMacros or None = None
+        self, markup: str
     ) -> list[Macro | str]:
         tokens = []
         last = 0
@@ -71,18 +108,46 @@ class Markup:
 
         return tokens
 
+    def __stash_pop__(self, cmacro: Macro, token: Macro) -> Macro:
+        if token.stash:
+            self.stash(cmacro)
+            cmacro = Macro()
+        if token.pop:
+            if (
+                isinstance(token.pop, str)
+                and token.pop != ""
+                and (val := self.pop(token.pop)) is not None
+            ):
+                cmacro = val
+            elif (val := self.pop()):
+                cmacro = val 
+        return cmacro
+
+    def collect_customs(self, customs: list[str]):
+        return sorted(
+            map(
+                lambda c: (c, self._customs_[c]),
+                filter(
+                    lambda f: f in self._customs_, 
+                    customs
+                ), 
+            ),
+            key=sort_customs
+        )
+
     def __parse__(self, tokens: list[Macro | str], *, close: bool = True) -> str:
         output = ""
-        cmacro = Macro("")
+        cmacro = Macro()
         previous = "text"
         url_open = False
 
         for token in tokens:
             if isinstance(token, Macro):
+                cmacro = self.__stash_pop__(cmacro, token)
                 if previous == "macro":
                     cmacro += token
                 else:
-                    cmacro = token.calc(cmacro)
+                    cmacro = token % cmacro
                 previous = "macro"
             else:
                 previous = "text"
@@ -91,11 +156,51 @@ class Markup:
                 elif cmacro.url == RESET:
                     url_open = False
 
+                repl = 1
+                # PERF: Use name loop arg for exceptions
+                for _, custom in self.collect_customs(cmacro.customs):
+                    modify = getattr(custom, "__custom_modify__")
+                    if modify:
+                        token = str(custom(token))
+                    else:
+                        token = re.sub(f"\\${repl}", str(custom(token)), token, 1)
+                        repl += 1
+
                 output += f"{cmacro}{token}"
 
         if close:
             output += f"\x1b[0m{Hyperlink.close if url_open else ''}"
         return output
+
+    @staticmethod
+    def custom(modify: bool = False):
+        """Create a custom macro. If args is true then
+        the next text token is passed in to be modified and returned. If
+        args is left out or is False then the next text element will have the
+        result of the method inserted similar to regex, using `$1..9`.
+
+        Example:
+            ```
+            @Markup.custom(True)
+            def rainbow(text: str) -> str
+            ```
+
+            or
+
+            ```
+            @Markup.custom()
+            def time() -> str
+            ```
+        """
+        def wrapper(func: Callable):
+            @wraps(func)
+            def decorator(text: str, *args, **kwargs):
+                if modify:
+                    return func(text)
+                return func()
+            setattr(decorator, "__custom_modify__", modify)
+            return decorator
+        return wrapper
 
     @staticmethod
     def strip(ansi: str = ""):
@@ -119,18 +224,21 @@ class Markup:
     @staticmethod
     def print(
         *markup: str,
+        customs: list[Callable|tuple[str,Callable]] | None = None,
         sep: str = " ",
         end: str = "\n",
         file: "SupportsWrite[str] | None" = None,
     ):
         """Print in string markup to stdout with a space gap."""
-        print(Markup.parse(*markup, sep=sep), end=end, file=file)
+        print(Markup.parse(*markup, customs=customs, sep=sep), end=end, file=file)
 
     @staticmethod
-    def parse(*markup: str, sep: str = " ") -> str:
+    def parse(*markup: str, customs: list[Callable|tuple[str,Callable]] | None = None, sep: str = " ") -> str:
         """Parse in string markup and return the ansi encoded string."""
+        customs = customs or []
+
         if len(markup) > 0:
-            parser = Markup()
+            parser = Markup(customs=customs)
 
             parser.feed(markup[0])
             for text in markup[1:]:

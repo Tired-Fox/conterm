@@ -1,8 +1,11 @@
 from __future__ import annotations
 from collections.abc import Callable
+from dataclasses import dataclass
 from enum import Enum
 from re import sub
 from typing import Any
+
+from conterm.control.ansi.event import Modifiers
 from .color import Color
 from .hyperlink import Hyperlink
 
@@ -18,51 +21,90 @@ def _cod(condition, one, default: Any = ""):
     return one if condition else default
 
 
-class MacroState(Enum):
-    Empty = 0
-    Close = 1
-    Open = 2
+MOD_CODE_MAP = {
+    "Bold": "1",
+    "Dim": "2",
+    "Italic": "3",
+    "Underline": "4",
+    "SBlink": "5",
+    "RBlink": "6",
+    "Reverse": "7",
+    "Strike": "9",
+    "U_Bold": "21",
+    "U_Dim": "22",
+    "U_Italic": "23",
+    "U_Underline": "24",
+    "U_SBlink": "25",
+    "U_RBlink": "25",
+    "U_Reverse": "27",
+    "U_Strike": "29",
+}
 
-    def is_open(self) -> bool:
-        """If the macro is open."""
-        return self == MacroState.Open
+MOD_SYMBOL_MAP = {
+    "b": "Bold",
+    "d": "Dim",
+    "i": "Italic",
+    "u": "Underline",
+    "sb": "SBlink",
+    "rb": "RBlink",
+    "r": "Reverse",
+    "s": "Strike",
+    "/b": "U_Bold",
+    "/d": "U_Dim",
+    "/i": "U_Italic",
+    "/u": "U_Underline",
+    "/rb": "U_RBlink",
+    "/sb": "U_SBlink",
+    "/r": "U_Reverse",
+    "/s": "U_Strike",
+}
 
-    def is_close(self) -> bool:
-        """If the macro is closed."""
-        return self == MacroState.Close
+def map_modifers(op: int, cl: int) -> list[str]:
+    result = []
 
-    def is_none(self) -> bool:
-        """If the macro is not defined."""
-        return self == MacroState.Empty
+    for mod in ModifierOpen:
+        if mod.value & op and mod.value & cl == 0:
+            result.append(MOD_CODE_MAP[mod.name])
+    for mod in ModifierClose:
+        if mod.value & cl and mod.value & op == 0:
+            result.append(MOD_CODE_MAP[mod.name])
+    return result
 
-    def rep(self, o, c):
-        """Get ansi representation based ont he state."""
-        if self == MacroState.Open:
-            return str(o)
-        if self == MacroState.Close:
-            return str(c)
-        return ""
+def map_modifer_names(op: int, cl: int) -> list[str]:
+    result = []
 
-    def lit(self, val) -> str:
-        """Get the literal representation based on state."""
-        if self == MacroState.Open:
-            return val
-        if self == MacroState.Close:
-            return f"/{val}"
-        return ""
+    for mod in ModifierOpen:
+        if mod.value & op and mod.value & cl == 0:
+            result.append(mod.name)
+    for mod in ModifierClose:
+        if mod.value & cl and mod.value & op == 0:
+            result.append(mod.name.replace("U_", "/"))
+    return result
 
+
+class ModifierOpen(Enum):
+    """Data class of modifier flags for integer packing."""
+    Bold = 1
+    Dim = 2
+    Italic = 4
+    Underline = 8
+    SBlink = 16
+    RBlink = 32
+    Reverse = 64
+    Strike = 128
+
+class ModifierClose(Enum):
+    U_Bold = 1
+    U_Dim = 2
+    U_Italic = 4
+    U_Underline = 8
+    U_SBlink = 16
+    U_RBlink = 32
+    U_Reverse = 64
+    U_Strike = 128
 
 RESET = Reset()
 CustomMacros = dict[str, Callable[[str], str]]
-
-
-def diff_modifier(current, other):
-    if (current == MacroState.Open and other != MacroState.Open) or (
-        current == MacroState.Close and other == MacroState.Open
-    ):
-        return current
-    return MacroState.Empty
-
 
 def diff_url(current, other):
     if (current == RESET and isinstance(other, str)) or (
@@ -74,14 +116,13 @@ def diff_url(current, other):
     return None
 
 
-def diff_color(current, other):
+def diff_color(new, old):
     # None, Reset, Set
-    if isinstance(current, str) and len(current) > 0:
-        return current
-    if current == RESET and other != RESET and other is not None:
+    if isinstance(new, str) and len(new) > 0:
+        return new
+    if new == RESET and isinstance(old, str):
         return RESET
     return None
-
 
 class Macro:
     """Representation of all data for a given macro."""
@@ -92,120 +133,100 @@ class Macro:
         "url",
         "fg",
         "bg",
-        "bold",
-        "italic",
-        "underline",
-        "strikethrough",
+        "stash",
+        "pop",
+        "mod_open",
+        "mod_close",
     )
 
     def __init__(self, macro: str = ""):
         self.macro = sub(" +", " ", macro)
 
         self.customs = []
+        self.stash = False
+        self.pop = None
+        self.mod_open = 0
+        self.mod_close = 0
         self.url = None
         self.fg = None
         self.bg = None
-        self.bold = MacroState.Empty
-        self.italic = MacroState.Empty
-        self.underline = MacroState.Empty
-        self.strikethrough = MacroState.Empty
 
         macros = self.macro.lstrip("[").rstrip("]").split(" ")
 
-        if len(macros) == 1 and macros[0] == "/":
-            self.__full_reset_macro__()
-        else:
-            for macro in macros:
-                self.__parse_macro__(macro)
+        for macro in macros:
+            self.__parse_macro__(macro)
 
     def __full_reset_macro__(self):
         self.url = RESET
         self.fg = RESET
         self.bg = RESET
-        self.bold = MacroState.Close
-        self.italic = MacroState.Close
-        self.underline = MacroState.Close
-        self.strikethrough = MacroState.Close
+        self.mod_open = 0
+        self.mod_close = 239
 
     def __parse_close_macro__(self, macro):
-        macro = macro.lstrip("/")
-        if macro in "ibus":
-            if macro == "i":
-                self.italic = MacroState.Close
-            elif macro == "b":
-                self.bold = MacroState.Close
-            elif macro == "u":
-                self.underline = MacroState.Close
-            elif macro == "s":
-                self.strikethrough = MacroState.Close
-        elif macro in ["fg", "bg"]:
-            if macro.startswith("fg"):
-                self.fg = RESET
-            else:
-                self.bg = RESET
-        elif macro.startswith("url"):
+        if macro == "/pop":
+            self.pop = True
+        elif macro == "/fg":
+            self.fg = RESET
+        elif macro == "/bg":
+            self.bg = RESET 
+        elif macro == "/~":
             self.url = RESET
 
     def __parse_open_macro__(self, macro):
-        if macro in "ibus":
-            if macro == "i":
-                self.italic = MacroState.Open
-            elif macro == "b":
-                self.bold = MacroState.Open
-            elif macro == "u":
-                self.underline = MacroState.Open
-            elif macro == "s":
-                self.strikethrough = MacroState.Open
-        elif macro[:2] in ["fg", "bg"]:
-            if "=" not in macro:
-                raise ValueError("Invalid macro color assignment: Missing `=`")
-            if macro.startswith("fg"):
-                self.fg = Color(macro.split("=", 1)[-1]).fg()
-            else:
-                self.bg = Color(macro.split("=", 1)[-1]).bg()
-        elif macro.startswith("url"):
-            if "=" not in macro:
-                raise ValueError("Expected url macro to have an link assignment")
-            self.url = Hyperlink.open(macro.split("=", 1)[-1])
-        elif macro.strip() != "":
-            self.customs.append(macro)
+        if macro.startswith("~"):
+            macro = macro[1:]
+            if len(macro) == 0:
+                raise ValueError("Expected url assignment")
+            self.url = Hyperlink.open(macro)
+        elif macro.startswith("@"):
+            self.bg = Color(macro[1:]).bg()
+        else:
+            try:
+                self.fg = Color(macro).fg()
+            except ValueError:
+                if macro.strip() != "":
+                    self.customs.append(macro)
 
     def __parse_macro__(self, macro):
-        if macro.startswith("/"):
-            self.__parse_close_macro__(macro)
+        if macro in MOD_SYMBOL_MAP:
+            macro = MOD_SYMBOL_MAP[macro]
+            if macro in ModifierClose.__members__:
+                self.mod_close |= ModifierClose[macro].value
+            elif macro in ModifierOpen.__members__:
+                self.mod_open|= ModifierOpen[macro].value
+        elif macro.startswith("/"):
+            if len(macro) == 1:
+                self.__full_reset_macro__()
+            else:
+                self.__parse_close_macro__(macro)
         else:
             self.__parse_open_macro__(macro)
 
     def __add__(self, other: Macro) -> Macro:
         macro = Macro()
         macro.customs = set([*self.customs, *other.customs])
-        macro.url = _cod(other.url is not None, other.url, self.url)
-        macro.fg = _cod(other.fg is not None, other.fg, self.fg)
-        macro.bg = _cod(other.bg is not None, other.bg, self.bg)
-        macro.bold = _cod(other.bold != MacroState.Empty, other.bold, self.bold)
-        macro.italic = _cod(other.italic != MacroState.Empty, other.italic, self.italic)
-        macro.underline = _cod(
-            other.underline != MacroState.Empty, other.underline, self.underline
-        )
-        macro.strikethrough = _cod(
-            other.strikethrough != MacroState.Empty,
-            other.strikethrough,
-            self.strikethrough,
-        )
+        macro.url = other.url if other.url is not None else self.url
+        macro.fg = other.fg if other.fg is not None else self.fg
+        macro.bg = other.bg if other.bg is not None else self.bg
+        macro.mod_open = other.mod_open | self.mod_open
+        macro.mod_close = other.mod_close | self.mod_close
         return macro
 
-    def calc(self, other: Macro) -> Macro:
+    def __mod__(self, old: Macro) -> Macro:
         """What the current macros values should be based on a previous/other
-        macro."""
+        macro. Remove duplicates between two macros for optimization"""
         macro = Macro()
         macro.customs = self.customs
-        macro.url = diff_url(self.url, other.url)
-        macro.fg = diff_color(self.fg, other.fg)
-        macro.bg = diff_color(self.bg, other.bg)
-        macro.bold = diff_modifier(self.bold, other.bold)
-        macro.italic = diff_modifier(self.italic, other.italic)
-        macro.underline = diff_modifier(self.underline, other.underline)
-        macro.strikethrough = diff_modifier(self.strikethrough, other.strikethrough)
+        macro.url = diff_url(self.url, old.url)
+        macro.fg = diff_color(self.fg, old.fg)
+        macro.bg = diff_color(self.bg, old.bg)
+        for mod in ModifierOpen:
+            if mod.value & self.mod_open and mod.value & old.mod_open == 0:
+                macro.mod_open |= mod.value
+        for mod in ModifierClose:
+            if mod.value & self.mod_close and mod.value & old.mod_close == 0:
+                macro.mod_close |= mod.value
         return macro
 
     def __str__(self):
@@ -215,19 +236,11 @@ class Macro:
         if self.bg is not None:
             parts.append(self.bg if self.bg != RESET else "49")
 
-        if not self.bold.is_none():
-            parts.append(self.bold.rep(1, 22))
-        if not self.italic.is_none():
-            parts.append(self.italic.rep(3, 23))
-        if not self.underline.is_none():
-            parts.append(self.underline.rep(4, 24))
-        if not self.strikethrough.is_none():
-            parts.append(self.strikethrough.rep(9, 29))
+        parts.extend(map_modifers(self.mod_open, self.mod_close))
 
         result = ""
         if len(parts) > 0:
             result = f"\x1b[{';'.join(parts)}m"
-
         if self.url is not None:
             if self.url == RESET:
                 result += Hyperlink.close
@@ -237,24 +250,17 @@ class Macro:
 
     def __repr__(self):
         parts = []
-        if self.fg != "":
-            parts.append(f"fg={self.fg!r}")
-        if self.bg != "":
-            parts.append(f"bg={self.bg!r}")
+        if self.fg is not None:
+            parts.append(f"{self.fg!r}")
+        if self.bg is not None:
+            parts.append(f"@{self.bg!r}")
 
         if self.url is not None:
-            parts.append(f"url{f'={self.url}' if self.url != '' else ''}")
+            parts.append(f"~{self.url}")
 
-        if self.bold != MacroState.Empty:
-            parts.append(self.bold.lit("bold"))
-        if self.italic != MacroState.Empty:
-            parts.append(self.italic.lit("italic"))
-        if self.underline != MacroState.Empty:
-            parts.append(self.underline.lit("underline"))
-        if self.strikethrough != MacroState.Empty:
-            parts.append(self.strikethrough.lit("strikethrough"))
+        parts.extend(map_modifer_names(self.mod_open, self.mod_close))
 
         if len(self.customs) > 0:
-            parts.append(f"custom=[{', '.join(self.customs.keys())}]")
+            parts.append(f"custom=[{', '.join(self.customs)}]")
 
         return f"Macro({', '.join(parts)})"
