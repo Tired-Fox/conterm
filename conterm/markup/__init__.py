@@ -4,27 +4,16 @@ This module is centered around pretty printing items to the screen.
 
 For now it only implements an in string markup language for easy to write
 stylized terminal output
-
-Todo:
-    - inline/in string markup
-        - [ ] Custom Macros
-        - [ ] Stash styling
-        - [ ] Pop styling
-        - [ ] Url collecting next string for link
-    - Pretty Print
-        - [ ] Themes: Dracula, Nord, One Dark, etc...
-        - [ ] native types: int/float, string, bool, None, Object, dict, list, set, tuple
-        - [ ] Code Blocks?
-            - Using a langauge parser
 """
+import re
 from collections.abc import Callable
 from functools import wraps
-import re
 from typing import TYPE_CHECKING
 
-from .macro import CustomMacros, Macro, RESET
 from .color import Color
-from .hyperlink import Hyperlink
+from .macro import RESET, CustomMacros, Macro
+from .util import Hyperlink, strip_ansi
+
 
 def sort_customs(custom: tuple[str, Callable]):
     if not hasattr(custom[1], "__custom_modify__"):
@@ -163,6 +152,9 @@ class Markup:
                         token = re.sub(f"\\${repl}", str(custom(token)), token, 1)
                         repl += 1
 
+                if cmacro.align is not None:
+                    token = cmacro.align.apply(token)
+
                 output += f"{cmacro}{token}"
 
         if close:
@@ -170,34 +162,41 @@ class Markup:
         return output
 
     @staticmethod
-    def custom(modify: bool = False):
-        """Create a custom macro. If args is true then
-        the next text token is passed in to be modified and returned. If
-        args is left out or is False then the next text element will have the
-        result of the method inserted similar to regex, using `$1..9`.
+    def modify(func: Callable[[str], str]):
+        """Create a custom macro that modifies the text token passed in. Insert custom
+        methods are ran first and modify custom macros are run after. The order they
+        are defined are preserved.
 
         Example:
             ```
-            @Markup.custom(True)
+            @Markup.modify
             def rainbow(text: str) -> str
             ```
+        """
+        @wraps(func)
+        def decorator(text: str, *args, **kwargs):
+            return func(text)
+        setattr(decorator, "__custom_modify__", True)
+        return decorator
 
-            or
+    @staticmethod
+    def insert(func: Callable[[], str]):
+        """Create a custom macro that creates and inserts text in the next text token.
+        The text is inserted similar to regex with `$1..9` signifiers. Insert custom
+        methods are ran first and modify custom macros are run after. The order they
+        are defined are preserved.
 
+        Example:
             ```
-            @Markup.custom()
-            def time() -> str
+            @Markup.insert
+            def curr_time() -> str
             ```
         """
-        def wrapper(func: Callable):
-            @wraps(func)
-            def decorator(text: str, *args, **kwargs):
-                if modify:
-                    return func(text)
-                return func()
-            setattr(decorator, "__custom_modify__", modify)
-            return decorator
-        return wrapper
+        @wraps(func)
+        def decorator(*args, **kwargs):
+            return func()
+        setattr(decorator, "__custom_modify__", False)
+        return decorator
 
     @staticmethod
     def strip(ansi: str = ""):
@@ -205,18 +204,11 @@ class Markup:
 
         Note:
             This method uses a regex to parse out any ansi codes. Below is the regex
-            `\\x1b\[[<?]?(?:(?:\d{1,3};?)*)[a-zA-Z~]|\\x1b]\d;;[^\\x1b]*\\x1b\\|[\\x00-\\x1B]`
+            `\\x1b\\[[<?]?(?:(?:\\d{1,3};?)*)[a-zA-Z~]|\\x1b]\\d;;[^\\x1b]*\\x1b\\|[\\x00-\\x1B]`
             The regex first trys to match a control sequence, then a link opening or closing
             sequence, finally it wall match any raw input sequence like `\\x04` == `ctrl+d`
         """
-        # First check for control sequences. This covers most sequences, but some may slip through
-        # Then check for Link opening and closing tags: \x1b]8;;<link>\x1b\ or \x1b]8;;\x1b\
-        # Finally check for any raw characters like \x04 == ctrl+d
-        return re.sub(
-            r"\x1b\[[<?]?(?:(?:\d{1,3};?)*)[a-zA-Z~]|\x1b]\d;;[^\x1b]*\x1b\\|[\x00-\x1B]",
-            "",
-            ansi,
-        )
+        return strip_ansi(ansi)
 
     @staticmethod
     def print(

@@ -1,13 +1,14 @@
 from __future__ import annotations
+
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
+from os import get_terminal_size
 from re import sub
-from typing import Any
+from typing import Any, Literal
 
-from conterm.control.ansi.event import Modifiers
 from .color import Color
-from .hyperlink import Hyperlink
+from .util import Hyperlink, strip_ansi
 
 
 class Reset:
@@ -83,7 +84,7 @@ def map_modifer_names(op: int, cl: int) -> list[str]:
 
 
 class ModifierOpen(Enum):
-    """Data class of modifier flags for integer packing."""
+    """Data class of modifier opening flags for integer packing."""
     Bold = 1
     Dim = 2
     Italic = 4
@@ -94,6 +95,7 @@ class ModifierOpen(Enum):
     Strike = 128
 
 class ModifierClose(Enum):
+    """Data class of modifier closing flags for integer packing."""
     U_Bold = 1
     U_Dim = 2
     U_Italic = 4
@@ -107,6 +109,7 @@ RESET = Reset()
 CustomMacros = dict[str, Callable[[str], str]]
 
 def diff_url(current, other):
+    """Diff URL."""
     if (current == RESET and isinstance(other, str)) or (
         isinstance(current, str) and not isinstance(other, str)
     ):
@@ -115,8 +118,16 @@ def diff_url(current, other):
         return f"{Hyperlink.close}{current}"
     return None
 
+def diff_align(new, old):
+    if new != old:
+        if new is not None:
+            return new
+        else:
+            return old
+    return new
 
 def diff_color(new, old):
+    """Diff color."""
     # None, Reset, Set
     if isinstance(new, str) and len(new) > 0:
         return new
@@ -124,10 +135,51 @@ def diff_color(new, old):
         return RESET
     return None
 
+class Align:
+    """ Alignment of text with width. """
+    def __init__(self, width: str = "0", align: Literal["<", "^", ">"] = "<"):
+        twidth = get_terminal_size()[0]
+        self.count = 0
+        if ":" in width:
+            width, count = width.split(":")
+            self.count = int(count)
+
+        if width.endswith("%"):
+            self._width_ = twidth * (100 - int(width[:-1])) // 100
+        elif width == "full":
+            self._width_ = twidth
+        elif width.startswith("-"):
+            self._width_ = max(0, twidth + int(width))
+        else:
+            self._width_ = int(width)
+        self._align_ = align
+
+    def __eq__(self, other: Align) -> bool:
+        if other is not None:
+            return self._width_ == other._width_ and self._align_ == other._align_
+        return False
+
+    def apply(self, text: str) -> str:
+        """Apply alignment."""
+
+        actual = len(strip_ansi(text))
+        remain = ((self._width_ - actual) // 2)
+        p1 = " " * remain
+        p2 = " " * (self._width_ - actual - remain)
+
+        if self._align_ == "<":
+            return f"{text}{p2 + p1 if self.count <= 1 else ''}"
+        elif self._align_ == "^":
+            return f"{p1}{text}{p2 if self.count <= 1 else ''}"
+        elif self._align_ == ">":
+            return f"{p2 + p1 if self.count > 1 else ''}{text}"
+        return text
+
 class Macro:
     """Representation of all data for a given macro."""
 
     __slots__ = (
+        "align",
         "macro",
         "customs",
         "url",
@@ -143,8 +195,9 @@ class Macro:
         self.macro = sub(" +", " ", macro)
 
         self.customs = []
+        self.align = None
         self.stash = False
-        self.pop = None
+        self.pop = False
         self.mod_open = 0
         self.mod_close = 0
         self.url = None
@@ -179,6 +232,8 @@ class Macro:
             if len(macro) == 0:
                 raise ValueError("Expected url assignment")
             self.url = Hyperlink.open(macro)
+        elif macro == "stash":
+            self.stash = True
         elif macro.startswith("@"):
             self.bg = Color(macro[1:]).bg()
         else:
@@ -195,6 +250,10 @@ class Macro:
                 self.mod_close |= ModifierClose[macro].value
             elif macro in ModifierOpen.__members__:
                 self.mod_open|= ModifierOpen[macro].value
+        elif macro != "" and macro[0] in ["<", ">", "^"]:
+            try:
+                self.align = Align(macro[1:], macro[0])
+            except: pass
         elif macro.startswith("/"):
             if len(macro) == 1:
                 self.__full_reset_macro__()
@@ -206,11 +265,17 @@ class Macro:
     def __add__(self, other: Macro) -> Macro:
         macro = Macro()
         macro.customs = set([*self.customs, *other.customs])
-        macro.url = other.url if other.url is not None else self.url
-        macro.fg = other.fg if other.fg is not None else self.fg
-        macro.bg = other.bg if other.bg is not None else self.bg
+        macro.url = other.url or self.url
+        macro.fg = other.fg or self.fg
+        macro.bg = other.bg or self.bg
         macro.mod_open = other.mod_open | self.mod_open
         macro.mod_close = other.mod_close | self.mod_close
+        macro.align = (other.align or self.align)
+        if macro.align is not None:
+            if macro.align.count <= 1:
+                macro.align = None
+            else:
+                macro.align.count -= 1
         return macro
 
     def __mod__(self, old: Macro) -> Macro:
@@ -221,6 +286,10 @@ class Macro:
         macro.url = diff_url(self.url, old.url)
         macro.fg = diff_color(self.fg, old.fg)
         macro.bg = diff_color(self.bg, old.bg)
+        macro.align =  self.align
+        if macro.align is not None:
+            macro.align.count -= 1
+
         for mod in ModifierOpen:
             if mod.value & self.mod_open and mod.value & old.mod_open == 0:
                 macro.mod_open |= mod.value

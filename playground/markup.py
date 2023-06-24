@@ -29,15 +29,23 @@ Ansi close Operations (`/`):
     - Empty `/` without any symbols resets all styling
 
 TODO:
-    - [ ] Parse alignment with `[<^>]{size}`. Left, center, right respecively followed
+    - [x] Parse stash and pop
+    - [x] Parse alignment with `[<^>]{size}`. Left, center, right respecively followed
         by the width in characters
-    - [ ] Parse stash and pop
+    - [x] alignment percentages or full width
+    - [x] negative alignment subtracts from full width
     - [ ] Add support for terminal color mode detection
+        - [ ] gray scale
+        - [ ] 8 bit
+        - [ ] 16 bit
+        - [ ] full color
 """
 from __future__ import annotations
-from conterm.markup import Markup
-from conterm.markup.macro import Macro
 
+from conterm.markup import Markup
+
+# from conterm.markup.macro import Macro
+ALIGN = "[<8:3]\\[[red]ERROR[/fg]][^-8 240]Hello World"
 SAMPLE = "[i b u s white @blue]Some very styled text \\\\ \\[not macro]"
 SAMPLE2 = (
     "[i b u s red]Some very styled text, [/ @red]only bg color, [/bg u s] back again"
@@ -46,15 +54,16 @@ URL = "[~https://example.com]https://example.com[/~] [~https://example.com]Examp
 CUSTOM = "[rainbow time]$1"
 
 from datetime import datetime
+
 import pytermgui as ptg
-from rich import print as pprint
 from rich.console import Console
 
-@Markup.custom()
+
+@Markup.insert
 def time_now() -> str:
     return str(datetime.now().strftime("%H:%M"))
 
-@Markup.custom(True)
+@Markup.modify
 def rainbow(text: str) -> str:
     color = 1
     result = ""
@@ -72,10 +81,10 @@ if __name__ == "__main__":
     # first = Macro("[b d sb r]")
     # second = Macro("[b /d sb /r u #f32]")
     # print(repr(first + second))
-    # print(repr(first ^ second))
+    # print(repr(first % second))
 
-    print(Markup.strip(Markup.parse(SAMPLE, SAMPLE2, URL, CUSTOM, customs=[rainbow, ("time", time_now)])))
-    Markup.print(SAMPLE, SAMPLE2, URL, CUSTOM, customs=[rainbow, ("time", time_now)])
+    print(Markup.strip(Markup.parse(ALIGN, SAMPLE, SAMPLE2, URL, CUSTOM, customs=[rainbow, ("time", time_now)])))
+    Markup.print(ALIGN, SAMPLE, SAMPLE2, URL, CUSTOM, customs=[rainbow, ("time", time_now)])
 
     if False:
         from time import time_ns

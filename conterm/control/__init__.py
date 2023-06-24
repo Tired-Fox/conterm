@@ -10,6 +10,8 @@ When the above portion is implemented the input module will be split into the ne
 and the current 'ansi' module.
 """
 
+# TODO: Detect ansi support with \x1b[6n and getting back \x1b[\d;\dR
+
 # Import ansi module as base logic for input
 # This is only until raw input is implemented 
 from .ansi import *

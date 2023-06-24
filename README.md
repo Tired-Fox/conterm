@@ -1,4 +1,4 @@
-# conterm 
+# conterm
 
 <!-- Header Badges -->
 
@@ -20,6 +20,7 @@
 https://github.com/Textualize/rich/blob/master/rich/_win32_console.py
 
 **ReadConsoleInput**
+
 - https://learn.microsoft.com/en-us/windows/console/readconsoleinput
 - _Example_
   - https://learn.microsoft.com/en-us/windows/console/reading-input-buffer-events
