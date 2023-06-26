@@ -14,7 +14,6 @@ from .color import Color
 from .macro import RESET, Align, CustomMacros, Macro
 from .util import Hyperlink, strip_ansi
 
-
 def sort_customs(custom: tuple[str, Callable]):
     if not hasattr(custom[1], "__custom_modify__"):
         return 3
@@ -29,6 +28,10 @@ __all__ = ["Markup", "Macro", "Color", "Hyperlink"]
 
 class Markup:
     def __init__(self, customs: list[Callable|tuple[str,Callable]] | None = None) -> None:
+        from conterm.control.ansi import supports_ansi
+        if not supports_ansi():
+            raise ImportError("Conterm markup is not supported by your terminal")
+
         self.markup = ""
         self._result_ = ""
         self._customs_: CustomMacros = {}

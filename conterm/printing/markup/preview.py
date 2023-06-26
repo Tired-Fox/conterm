@@ -1,4 +1,3 @@
-from os import get_terminal_size
 from . import Markup
 
 def xterm_colors(markup: bool = False) -> str:

@@ -1,32 +1,28 @@
-from conterm.markup import *
-from conterm.markup.preview import rgb_colors, system_colors, xterm_colors
+from conterm.printing import Markup
+from conterm.printing.markup.preview import rgb_colors, system_colors, xterm_colors
+
 
 if __name__ == "__main__":
-    output = f"""\
+    Markup.print(f"""\
 [b]System Colors:[/b]
 {system_colors(True)}
 
 [b]Xterm Colors:[/b]
 {xterm_colors(True)}
 
-[b]RGB Colors:[/b]
+[b]RGB/Hex Colors:[/b]
 {rgb_colors(True)}
 
-[b]Formatting:[/b]
-    [i]Styling:[/i]
-[b ^full]Bold[/b] [u]underline[/u] [s]strikethrough[/s] [i]italic[/i] \
-[bl]blink[/bl] [r]reverse[/r] [~https://exaple.com]Url[/~ /^]
+[b]Formatting:[/b] [i]italic[/i] [b]bold[/b] [u]underline[/u] [s]strikethrough[/s] \
+[bl]blink[/bl] [r]reversed[/r] [~https://example.com]url[/]
 
-[b u ^full]mix[/b /u i bl] and [/bl /u /i s]match[/ /^]
+[b]Alignment:[/b]
+    [i]- <,^,> specifies alignment. Must include width for it to align[/i]
+        [<16 red]Left[/]|[^16 green]centered[/]|[>16 blue]Right[/]
 
-    [i]Alignment:[/i]
-        [<16 red]left just[/<]|[^16 green]center[/^]|[>16 blue]right just[/> /fg]
 
-        Alignment can be based on characters/pixels, percent, or full; Ex:
+    [i]- pixel/char width, full width, or % width[/i]
+[^30% magenta]center aligned 30%[^70% cyan]Center aligned 70%[/]
 
-[^30% magenta]30% centered[>70% cyan]70% right aligned[/fg]
-
-[^100% i b] Everything can be mixed and matched to style how you like
-"""
-
-    Markup.print(output)
+[^full red]Full width[/]
+""")
