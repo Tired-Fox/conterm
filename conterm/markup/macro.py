@@ -29,14 +29,16 @@ MOD_CODE_MAP = {
     "Underline": "4",
     "SBlink": "5",
     "RBlink": "6",
+    "Blink": "6;5",
     "Reverse": "7",
     "Strike": "9",
-    "U_Bold": "21",
+    "U_Bold": "22",
     "U_Dim": "22",
     "U_Italic": "23",
     "U_Underline": "24",
     "U_SBlink": "25",
     "U_RBlink": "25",
+    "U_Blink": "25",
     "U_Reverse": "27",
     "U_Strike": "29",
 }
@@ -48,6 +50,7 @@ MOD_SYMBOL_MAP = {
     "u": "Underline",
     "sb": "SBlink",
     "rb": "RBlink",
+    "bl": "Blink",
     "r": "Reverse",
     "s": "Strike",
     "/b": "U_Bold",
@@ -56,6 +59,7 @@ MOD_SYMBOL_MAP = {
     "/u": "U_Underline",
     "/rb": "U_RBlink",
     "/sb": "U_SBlink",
+    "/bl": "U_Blink",
     "/r": "U_Reverse",
     "/s": "U_Strike",
 }
@@ -91,8 +95,9 @@ class ModifierOpen(Enum):
     Underline = 8
     SBlink = 16
     RBlink = 32
-    Reverse = 64
-    Strike = 128
+    Blink = 64
+    Reverse = 128
+    Strike = 256
 
 class ModifierClose(Enum):
     """Data class of modifier closing flags for integer packing."""
@@ -102,8 +107,9 @@ class ModifierClose(Enum):
     U_Underline = 8
     U_SBlink = 16
     U_RBlink = 32
-    U_Reverse = 64
-    U_Strike = 128
+    U_Blink = 64
+    U_Reverse = 128
+    U_Strike = 256
 
 RESET = Reset()
 CustomMacros = dict[str, Callable[[str], str]]
@@ -139,13 +145,9 @@ class Align:
     """ Alignment of text with width. """
     def __init__(self, width: str = "0", align: Literal["<", "^", ">"] = "<"):
         twidth = get_terminal_size()[0]
-        self.count = 0
-        if ":" in width:
-            width, count = width.split(":")
-            self.count = int(count)
 
         if width.endswith("%"):
-            self._width_ = twidth * (100 - int(width[:-1])) // 100
+            self._width_ = int(float(twidth) * (int(width[:-1]) / 100))
         elif width == "full":
             self._width_ = twidth
         elif width.startswith("-"):
@@ -154,25 +156,35 @@ class Align:
             self._width_ = int(width)
         self._align_ = align
 
+    def __repr__(self) -> str:
+        return f"{self._align_}{self._width_}"
+
     def __eq__(self, other: Align) -> bool:
-        if other is not None:
+        if other is not None and other != RESET:
             return self._width_ == other._width_ and self._align_ == other._align_
         return False
 
-    def apply(self, text: str) -> str:
+    def apply(self, text: str, macro: Macro | None = None, url: str | None = None) -> str:
         """Apply alignment."""
 
-        actual = len(strip_ansi(text))
+        nt = strip_ansi(text)
+        actual = len(nt)
         remain = ((self._width_ - actual) // 2)
         p1 = " " * remain
         p2 = " " * (self._width_ - actual - remain)
+        
+        style = str(macro) if macro is not None else ''
+        reset = f"\x1b[0m{Hyperlink.close}"
+        if url is not None and url != RESET:
+            style += url
 
         if self._align_ == "<":
-            return f"{text}{p2 + p1 if self.count <= 1 else ''}"
+            return f"{text}{reset}{p1 + p2}{style}"
         elif self._align_ == "^":
-            return f"{p1}{text}{p2 if self.count <= 1 else ''}"
+            return f"{reset}{p1}{text}{reset}{p2}{style}"
         elif self._align_ == ">":
-            return f"{p2 + p1 if self.count > 1 else ''}{text}"
+            return f"{reset}{p1 + p2}{style}{text}"
+
         return text
 
 class Macro:
@@ -213,12 +225,15 @@ class Macro:
         self.url = RESET
         self.fg = RESET
         self.bg = RESET
+        self.align = RESET
         self.mod_open = 0
         self.mod_close = 239
 
     def __parse_close_macro__(self, macro):
         if macro == "/pop":
             self.pop = True
+        elif macro.endswith(("^", ">", "<")):
+            self.align = RESET
         elif macro == "/fg":
             self.fg = RESET
         elif macro == "/bg":
@@ -232,6 +247,10 @@ class Macro:
             if len(macro) == 0:
                 raise ValueError("Expected url assignment")
             self.url = Hyperlink.open(macro)
+        elif macro.startswith(("<", ">", "^")):
+            try:
+                self.align = Align(macro[1:], macro[0])
+            except: pass
         elif macro == "stash":
             self.stash = True
         elif macro.startswith("@"):
@@ -250,10 +269,6 @@ class Macro:
                 self.mod_close |= ModifierClose[macro].value
             elif macro in ModifierOpen.__members__:
                 self.mod_open|= ModifierOpen[macro].value
-        elif macro != "" and macro[0] in ["<", ">", "^"]:
-            try:
-                self.align = Align(macro[1:], macro[0])
-            except: pass
         elif macro.startswith("/"):
             if len(macro) == 1:
                 self.__full_reset_macro__()
@@ -270,12 +285,7 @@ class Macro:
         macro.bg = other.bg or self.bg
         macro.mod_open = other.mod_open | self.mod_open
         macro.mod_close = other.mod_close | self.mod_close
-        macro.align = (other.align or self.align)
-        if macro.align is not None:
-            if macro.align.count <= 1:
-                macro.align = None
-            else:
-                macro.align.count -= 1
+        macro.align = other.align or self.align
         return macro
 
     def __mod__(self, old: Macro) -> Macro:
@@ -286,9 +296,7 @@ class Macro:
         macro.url = diff_url(self.url, old.url)
         macro.fg = diff_color(self.fg, old.fg)
         macro.bg = diff_color(self.bg, old.bg)
-        macro.align =  self.align
-        if macro.align is not None:
-            macro.align.count -= 1
+        macro.align = self.align
 
         for mod in ModifierOpen:
             if mod.value & self.mod_open and mod.value & old.mod_open == 0:
@@ -325,9 +333,11 @@ class Macro:
             parts.append(f"@{self.bg!r}")
 
         if self.url is not None:
-            parts.append(f"~{self.url}")
+            parts.append(f"~{self.url!r}")
 
         parts.extend(map_modifer_names(self.mod_open, self.mod_close))
+        if self.align is not None:
+            parts.append(f"align={self.align!r}")
 
         if len(self.customs) > 0:
             parts.append(f"custom=[{', '.join(self.customs)}]")

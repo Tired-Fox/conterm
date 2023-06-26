@@ -11,7 +11,7 @@ from functools import wraps
 from typing import TYPE_CHECKING
 
 from .color import Color
-from .macro import RESET, CustomMacros, Macro
+from .macro import RESET, Align, CustomMacros, Macro
 from .util import Hyperlink, strip_ansi
 
 
@@ -125,7 +125,8 @@ class Markup:
         output = ""
         cmacro = Macro()
         previous = "text"
-        url_open = False
+        url_open = None
+        align = None
 
         for token in tokens:
             if isinstance(token, Macro):
@@ -138,9 +139,9 @@ class Markup:
             else:
                 previous = "text"
                 if isinstance(cmacro.url, str):
-                    url_open = True
+                    url_open = cmacro.url
                 elif cmacro.url == RESET:
-                    url_open = False
+                    url_open = None
 
                 repl = 1
                 # PERF: Use name loop arg for exceptions
@@ -153,12 +154,22 @@ class Markup:
                         repl += 1
 
                 if cmacro.align is not None:
-                    token = cmacro.align.apply(token)
-
+                    if cmacro.align == RESET and align is not None:
+                        output = output[:align[1]] + align[0].apply(output[align[1]:], cmacro, cmacro.url)
+                        align = None
+                    elif isinstance(cmacro.align, Align):
+                        if align is not None:
+                            output = output[:align[1]] + align[0].apply(output[align[1]:], cmacro, cmacro.url)
+                        align = (cmacro.align, len(output))
+                    cmacro.align = None
+                
                 output += f"{cmacro}{token}"
 
+        if align is not None:
+            output = output[:align[1]] + align[0].apply(output[align[1]:], url=url_open)
+
         if close:
-            output += f"\x1b[0m{Hyperlink.close if url_open else ''}"
+            output += f"\x1b[0m{Hyperlink.close if url_open is not None else ''}"
         return output
 
     @staticmethod

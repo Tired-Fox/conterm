@@ -41,11 +41,12 @@ TODO:
         - [ ] full color
 """
 from __future__ import annotations
+import sys
 
 from conterm.markup import Markup
 
 # from conterm.markup.macro import Macro
-ALIGN = "[<8:3]\\[[red]ERROR[/fg]][^-8 240]Hello World"
+ALIGN = "[<8]\\[[red]ERROR[/fg]][^-8 240]Hello World"
 SAMPLE = "[i b u s white @blue]Some very styled text \\\\ \\[not macro]"
 SAMPLE2 = (
     "[i b u s red]Some very styled text, [/ @red]only bg color, [/bg u s] back again"
@@ -85,6 +86,36 @@ if __name__ == "__main__":
 
     print(Markup.strip(Markup.parse(ALIGN, SAMPLE, SAMPLE2, URL, CUSTOM, customs=[rainbow, ("time", time_now)])))
     Markup.print(ALIGN, SAMPLE, SAMPLE2, URL, CUSTOM, customs=[rainbow, ("time", time_now)])
+    print("\n")
+
+    
+    output = "[^full]"
+    for i in range(8):
+        output += f"[{i}]▀"
+    output += "    " 
+    for i in range(8, 16):
+        output += f"[{i}]▀"
+
+    output += "[^full]"
+    for color in range(23):
+        output += f"[{232 + color} @{min(232 + color + 1, 255)}]▀"
+    output += "[/fg /bg /^]\n\n"
+
+    cursor = 16
+    output += "[^full]"
+    for row in range(1, 4):
+        for column in range(37):
+            if column == 36:
+                continue
+
+            output += f"[{cursor + column} @{cursor + column + 36}]▀"
+        output += "[/fg /bg ^full]"
+        cursor += 72
+        if cursor > 232:
+            break
+    output = Markup.parse(output)
+    # print(repr(output))
+    print(output)
 
     if False:
         from time import time_ns

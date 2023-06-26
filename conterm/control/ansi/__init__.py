@@ -37,6 +37,7 @@ __all__= [
     "Listener",
     "InputManager",
     "terminal_input",
+    "supports_ansi",
 ]
 
 @contextmanager
@@ -116,7 +117,6 @@ class InputManager:
                 if char != "":
                     yield Record(char)
 
-
 def _void_(*_):
     pass
 
@@ -157,3 +157,22 @@ class Listener(Thread):
                 result = self._on_mouse_(record.mouse)
                 if result is False:
                     return
+
+def supports_ansi() -> bool:
+    """Check if the current terminal supports ansi sequences."""
+
+    sys.stdout.write("\x1b[6n")
+    sys.stdout.flush()
+
+    # Collect input which could be blank meaning no ansi input
+    char = ""
+    try:
+        char += read(1)
+        while read_ready(sys.stdin):
+            char += read(1)
+    finally: pass
+
+    return char != "" and char.startswith("\x1b[") and char.endswith("R")
+
+if not supports_ansi():
+    raise ImportError("Cannot use ansi input manager when the terminal does not support ansi.") 

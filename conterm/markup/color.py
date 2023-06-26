@@ -23,7 +23,6 @@ class Color:
         if color.startswith("#"):
             color = color.lstrip("#")
             if len(color) not in [3, 6]:
-                print(color)
                 raise ValueError(f"Expected hex value to have 3 to 6 digits: {len(color)} found")
             if len(color) == 3:
                 color = f"{color[0]*2}{color[1]*2}{color[2]*2}"
