@@ -91,7 +91,7 @@ class InputManager:
     def __enter__(self):
         return self
 
-    def __exit__(self, *_):
+    def __exit__(self, etype, evalue, etb):
         if self.data is not None:
             terminal_reset(self.data)
             self.data = None
@@ -126,16 +126,19 @@ class Listener(Thread):
 
     def __init__(
         self,
-        on_key: Callable[[Key],bool|None] =_void_,
-        on_mouse: Callable[[Mouse],bool|None]=_void_,
+        on_key: Callable[[Key, dict],bool|None] =_void_,
+        on_mouse: Callable[[Mouse, dict],bool|None]=_void_,
         interupt: bool = True,
         *,
+        state: dict|None = None,
         surpress: bool = False,
     ):
         self._on_key_ = on_key
         self._on_mouse_ = on_mouse
         self._interupt_ = interupt
         self._surpress_ = surpress
+        self._state_ = state or {}
+        self.exc = None
         # If the program exits in a odd manner then the thread will
         # also exit
         super().__init__(name="python_input_listner", daemon=True)
@@ -144,19 +147,31 @@ class Listener(Thread):
         self.start()
         return self
 
-    def __exit__(self, *_):
-        pass
+    def __exit__(self, etype, evalue, etb):
+        if evalue is not None:
+            raise evalue
 
     def run(self):
-        for record in InputManager.watch(self._interupt_, self._surpress_):
-            if record == "KEY":
-                result = self._on_key_(record.key)
-                if result is False:
-                    return
-            elif record == "MOUSE":
-                result = self._on_mouse_(record.mouse)
-                if result is False:
-                    return
+        try:
+            for record in InputManager.watch(self._interupt_, self._surpress_):
+                if record == "KEY":
+                    result = self._on_key_(record.key, self._state_)
+                    if result is False:
+                        return
+                elif record == "MOUSE":
+                    result = self._on_mouse_(record.mouse, self._state_)
+                    if result is False:
+                        return
+        except KeyboardInterrupt as error:
+            self.exc = error
+
+    def join(self):
+        """Force exceptions to be thrown in main thread"""
+        Thread.join(self)
+        # If exception occurs raise it again here. This will raise
+        # the exception in the caller thread.
+        if self.exc is not None:
+            raise self.exc
 
 def supports_ansi() -> bool:
     """Check if the current terminal supports ansi sequences."""
