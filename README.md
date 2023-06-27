@@ -15,7 +15,6 @@
 </div>
 
 <!-- End Header -->
-
 **Rich Win32 Impl**
 https://github.com/Textualize/rich/blob/master/rich/_win32_console.py
 
@@ -25,6 +24,7 @@ https://github.com/Textualize/rich/blob/master/rich/_win32_console.py
 - _Example_
   - https://learn.microsoft.com/en-us/windows/console/reading-input-buffer-events
 
+> note: Don't forget to change `git config http.sslVerify false`
 <!-- Footer Badges --!>
 
 <br>
