@@ -1,8 +1,11 @@
+from conterm.control.ansi.actions import set_title
 from conterm.printing import Markup
 from conterm.printing.markup.preview import rgb_colors, system_colors, xterm_colors
 
 
 if __name__ == "__main__":
+    set_title("Markup Example")
+
     Markup.print(f"""\
 [b]System Colors:[/b]
 {system_colors(True)}

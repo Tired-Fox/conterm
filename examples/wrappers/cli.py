@@ -5,6 +5,8 @@ command to manually run the click command line.
 
 import click
 
+from conterm.control.ansi.actions import set_title
+
 @click.group()
 def cli():
     """A test cli tool."""
@@ -24,4 +26,6 @@ def database():
     print("set database")
 
 if __name__ == "__main__":
+    set_title("Click Example")
+
     cli()

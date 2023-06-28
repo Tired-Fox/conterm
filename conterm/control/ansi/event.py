@@ -13,6 +13,9 @@ from .keys import keys
 
 @cache
 def _build_chord_(modifiers: int, key: str):
+    """Builds string chord from key event data. Caches results
+    for prolonged keyboard event captures.
+    """
     ctrl = "ctrl+" if modifiers & Modifiers.Ctrl else ""
     alt = "alt+" if modifiers & Modifiers.Alt else ""
     if key in keys:
@@ -221,12 +224,15 @@ class Key:
         return len(self.key) == 1 and self.key.isascii()
 
     def ctrl(self) -> bool:
+        """Check if the key has a control modifier applied."""
         return self.modifiers & Modifiers.Ctrl != 0
 
     def alt(self) -> bool:
+        """Check if the key has a alt modifier applied."""
         return self.modifiers & Modifiers.Alt != 0
 
     def shift(self) -> bool:
+        """Check if the key has a shift modifier applied."""
         return self.modifiers & Modifiers.Shift != 0 or self.key.isupper()
 
     def __eq__(self, __value: object) -> bool:

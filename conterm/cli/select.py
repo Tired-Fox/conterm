@@ -1,10 +1,8 @@
 from __future__ import annotations
 from sys import stdout
-import sys
 from typing import Any, Literal, overload
 from conterm.control.ansi.actions import del_line, up
-from conterm.control.ansi import InputManager, Key, Listener
-from conterm.control.ansi.event import eprint
+from conterm.control.ansi import Key, Listener
 
 from conterm.printing.markup import Markup
 
@@ -13,8 +11,6 @@ __all__ = [
     "select",
     "multi_select"
 ]
-
-# PERF: Optimize methods and combine duplicate code for V1
 
 def _select_clear_(options, prompt, help, msg=False):
     """Clear select text."""
@@ -75,22 +71,22 @@ def _uinput_(prompt, keep, color, password):
             stdout.write(f"{prompt} {'*' * len(result) if hide else result}\n[alt+h = show/hide]")
             stdout.flush()
         else:
-            stdout.write(f"{prompt} {'*' * len(result) if hide else result}")
+            stdout.write(f"{prompt} {result}")
             stdout.flush()
 
     def on_key(event, state):
-        if event.key == "enter":
+        if event == "enter":
             return False
-        elif event.key == "backspace":
+        elif event == "backspace":
             state["result"] = state["result"][:-1]
             clear()
             write(state["result"], state["hide"])
-        elif event.key == "alt+h" and password:
+        elif event == "alt+h" and password:
             state["hide"] = not state["hide"] 
             clear()
             write(state["result"], state["hide"])
-        elif len(str(event.key)) == 1:
-            state["result"] += str(event.key)
+        elif len(str(event)) == 1:
+            state["result"] += str(event)
             clear()
             write(state["result"], state["hide"])
 

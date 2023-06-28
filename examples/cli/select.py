@@ -22,8 +22,11 @@ Current Options:
 Make sure to run it a few times as there are multiple paths
 """
 from conterm.cli.select import *
+from conterm.control.ansi.actions import set_title
 
 if __name__ == "__main__":
+    set_title("Select Example")
+
     name = prompt("password:", password=True)
     preset = ""
     theme = ""

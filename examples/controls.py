@@ -1,4 +1,5 @@
 from conterm.control import Key, Mouse, Event, Button, Listener, eprint, keys
+from conterm.control.ansi.actions import set_title
 
 def on_key(event: Key, _) -> bool | None:
     """Handler for key events."""
@@ -18,6 +19,8 @@ def on_mouse(event: Mouse, _) -> bool | None:
         eprint(event)
 
 if __name__ == "__main__":
+    set_title("Controls Example")
+
     # Can build a key code from a chord.
     # The code is only valid key codes returns none if it can't
     # generate a valid code.

@@ -1,8 +1,11 @@
 """This example shows that you can manually run the click cli with custom cmd."""
 from cli import cli
+from conterm.control.ansi.actions import set_title
 from conterm.wrapper import run_click
 
 if __name__ == "__main__":
+    set_title("Manual Arg Parse Example")
+
     output = run_click(cli, "set")
     if len(output) > 0:
         # Should capture the help command for set

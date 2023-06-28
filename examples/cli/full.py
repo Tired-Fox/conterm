@@ -6,6 +6,8 @@ from time import sleep
 from conterm.cli import *
 import random
 
+from conterm.control.ansi.actions import set_title
+
 FILE_COUNT = {
     "basic": 5,
     "blog": 10,
@@ -13,6 +15,8 @@ FILE_COUNT = {
 }
 
 if __name__ == "__main__":
+    set_title("Full CLI Example")
+
     name = prompt("project name:")
     preset = ""
     theme = ""

@@ -3,53 +3,68 @@ from typing import Literal
 from . import read, read_ready
 
 def up(count: int = 1):
+    """Move the cursor up by {count} lines."""
     stdout.write(f"\x1b[{count}A")
     stdout.flush()
 
 def down(count: int = 1):
+    """Move the cursor down by {count} lines."""
     stdout.write(f"\x1b[{count}B")
     stdout.flush()
 
 def left(count: int = 1):
+    """Move the cursor left by {count} columns."""
     stdout.write(f"\x1b[{count}C")
     stdout.flush()
 
 def right(count: int = 1):
+    """Move the cursor right by {count} columns."""
     stdout.write(f"\x1b[{count}D")
     stdout.flush()
 
 def to_x(_x: int = 0):
+    """Move cursor to x position, absolute."""
     stdout.write(f"\x1b[{_x}G")
     stdout.flush()
 
 def to_y(_y: int = 0):
+    """Move cursor to y position, absolute."""
     stdout.write(f"\x1b[{_y}d")
     stdout.flush()
 
 def move_to(_x: int = 0, _y: int = 0):
+    """Move cursor to x,y position, absolute.
+
+    Call with no args or with 0, 0 to execute the `home` command; `\\x1b[H`
+    """
     if _x == 0 and _y == 0:
         stdout.write("\x1b[H")
     else:
         stdout.write(f"\x1b[{_y};{_x}H")
     stdout.flush()
 
-def save_pos():
+def save_cursor():
+    """Save the cursors current position."""
     stdout.write(f"\x1b[s")
     stdout.flush()
 
-def restore_pos():
+def load_cursor():
+    """Load the cursors previous position."""
     stdout.write(f"\x1b[u")
     stdout.flush()
 
 def delete(count: int = 1):
+    """Delete {count} characters."""
     stdout.write(f"\x1b[{count}P")
     stdout.flush()
 
 def erase(count: int = 1):
+    """Erase {count} characters. Replaces them with ` `"""
     stdout.write(f"\x1b[{count}X")
     stdout.flush()
 
 def del_line(count: int = 1):
+    """Delete {count} lines starting from the cursors current position."""
     stdout.write(f"\x1b[{count}M")
     stdout.flush()
 
@@ -87,10 +102,14 @@ def cursor(mode: Literal[0, 1, 2, 3, 4, 5, 6] | None = None, show: bool | None =
     stdout.flush()
 
 def insert_line(count: int = 1):
+    """Insert a line where the cursor is pushing all other lines down.
+    This includes the line the cursor is current on.
+    """
     stdout.write(f"\x1b[{count}L")
     stdout.flush()
 
 def set_title(title: str = ""):
+    """Set the terminal title."""
     stdout.write(f"\x1b]0;{title}\x07")
     stdout.flush()
 

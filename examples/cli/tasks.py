@@ -12,12 +12,16 @@ from threading import Thread
 from conterm.cli import TaskManager, Spinner, Progress, Icons
 from time import sleep
 
+from conterm.control.ansi.actions import set_title
+
 def increment(progress: Progress, duration: float):
     while not progress.complete:
         progress.increment()
         sleep(duration)
 
 if __name__ == "__main__":
+    set_title("Tasks Example")
+
     tman = TaskManager(Spinner(prompt="Some Prompt", rate=0.25))
     tman.start()
 
