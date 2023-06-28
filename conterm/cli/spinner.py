@@ -1,10 +1,16 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
+from queue import Queue
+from sys import stdout
 from threading import Event, Thread
 from time import sleep
-from queue import Queue
 from typing import Literal
 
-from conterm.control.ansi.actions import del_line, insert_line, move_to, pos, restore_pos, save_pos, up
+from conterm.control.ansi.actions import (down, move_to, pos, restore_pos,
+                                          save_pos)
+
+ACTIVE = False
 
 @dataclass
 class Icons:
@@ -33,24 +39,37 @@ class _Spinner(Thread):
         icons: list[str] | str = Icons.DOTS,
         prompt: str = "",
         rate: float = 1,
-        static: bool = False,
         total: int | None = None,
         format: Literal["prefix", "suffix"] = "prefix",
         *args,
         **kwargs
     ):
+        global ACTIVE
+
+        if ACTIVE:
+            raise ValueError("Spinner is already running: cannot have more than one spinner at a time.")
+
         super().__init__(*args, **kwargs, daemon=True)
         self._icons_ = icons
         self._rate_ = rate
         self._prompt_ = prompt
-        self._static_ = static
         self._total_ = total
         self._queue_ = Queue()
+        self._print_ = Queue()
         self._stop_ = Event()
-        self._line_ = 0
         self._index_ = 0
+
+        if isinstance(icons, str):
+            self._longest_ = 1
+        else:
+            self._longest_ = max(map(len, icons))
+
         self._format_ = format
         self.exc = None
+
+        _, y = pos()
+        self._line_ = y
+        ACTIVE = True
 
     def add(self, amount: int = 1):
         """Add a number to the progress."""
@@ -58,28 +77,28 @@ class _Spinner(Thread):
             raise ValueError("Current spinner is not a progress spinner.")
         self._queue_.put(amount)
 
+    def print(self, *text: str):
+        """Print to stdout while the spinner is running."""
+        self._print_.put(text)
+
     def write(self):
         if self._format_ == "prefix":
-            print(f"{self._icons_[self._index_]} {self._prompt_}")
+            stdout.write(f"{self._icons_[self._index_]} {self._prompt_}".ljust(self._longest_))
+            stdout.flush()
         else:
-            print(f"{self._prompt_} {self._icons_[self._index_]}")
+            stdout.write(f"{self._prompt_} {self._icons_[self._index_]}".ljust(self._longest_))
+            stdout.flush()
 
-    def clear(self):
+        restore_pos()
+
+    def to_start(self):
         # Delete the prevous loading line
-        if self._static_:
-            save_pos()
-            move_to(0, self._line_-1)
-            del_line()
-            insert_line()
-        else:
-            up()
-            del_line()
+        save_pos()
+        move_to(0, self._line_)
 
     def run(self):
         total = 0
-        if not self._static_:
-            self.write()
-        _, self._line_ = pos()
+        down()
 
         try:
             while not self._stop_.is_set():
@@ -92,9 +111,10 @@ class _Spinner(Thread):
                 self._index_ = (self._index_ + 1) % len(self._icons_)
 
                 # Display new line
-                self.clear() 
+                self.to_start() 
                 self.write()
-                restore_pos()
+                while self._print_.qsize() > 0:
+                    print(*self._print_.get())
                 sleep(self._rate_)
         except KeyboardInterrupt as error:
             self.exc = error
@@ -106,7 +126,10 @@ class _Spinner(Thread):
         self.join()
 
     def join(self):
+        global ACTIVE
+
         Thread.join(self)
+        ACTIVE = False
         if self.exc is not None:
             raise self.exc
 
@@ -114,11 +137,10 @@ def spinner(
     prompt: str,
     rate: float = 1,
     total: int | None = None,
-    static: bool = False,
     icons: list[str] | str = Icons.DOTS,
     format: Literal["prefix", "suffix"] = "prefix" 
 ) -> _Spinner:
-    return _Spinner(icons=icons, rate=rate, prompt=prompt, static=static, total=total, format=format)
+    return _Spinner(icons=icons, rate=rate, prompt=prompt, total=total, format=format)
 
 @dataclass
 class Spinner:
@@ -129,29 +151,26 @@ class Spinner:
         prompt: str,
         rate: float = 0.65,
         total: int | None = None,
-        static: bool = False,
         format: Literal["prefix", "suffix"] = "prefix"
     ):
         """"""
-        return _Spinner(icons=Icons.ELLIPSE, rate=rate, prompt=prompt, static=static, total=total, format=format)
+        return _Spinner(icons=Icons.ELLIPSE, rate=rate, prompt=prompt, total=total, format=format)
 
     @staticmethod
     def dots(
         prompt: str,
         rate: float = 0.15,
         total: int | None = None,
-        static: bool = False,
     ):
-        return _Spinner(icons=Icons.DOTS, rate=rate, prompt=prompt, static=static, total=total)
+        return _Spinner(icons=Icons.DOTS, rate=rate, prompt=prompt, total=total)
 
     @staticmethod
     def bounce(
         prompt: str,
         rate: float = 0.15,
         total: int | None = None,
-        static: bool = False,
     ):
-        return _Spinner(icons=Icons.BOUNCE, rate=rate, prompt=prompt, static=static, total=total)
+        return _Spinner(icons=Icons.BOUNCE, rate=rate, prompt=prompt, total=total)
 
 
     @staticmethod
@@ -159,123 +178,109 @@ class Spinner:
         prompt: str,
         rate: float = 0.15,
         total: int | None = None,
-        static: bool = False,
     ):
-        return _Spinner(icons=Icons.CROSS, rate=rate, prompt=prompt, static=static, total=total)
+        return _Spinner(icons=Icons.CROSS, rate=rate, prompt=prompt, total=total)
 
     @staticmethod
     def vertical(
         prompt: str,
         rate: float = 0.15,
         total: int | None = None,
-        static: bool = False,
     ):
-        return _Spinner(icons=Icons.VERTICAL, rate=rate, prompt=prompt, static=static, total=total)
+        return _Spinner(icons=Icons.VERTICAL, rate=rate, prompt=prompt, total=total)
 
     @staticmethod
     def horizontal(
         prompt: str,
         rate: float = 0.15,
         total: int | None = None,
-        static: bool = False,
     ):
-        return _Spinner(icons=Icons.HORIZONTAL, rate=rate, prompt=prompt, static=static, total=total)
+        return _Spinner(icons=Icons.HORIZONTAL, rate=rate, prompt=prompt, total=total)
 
     @staticmethod
     def arrow(
         prompt: str,
         rate: float = 0.15,
         total: int | None = None,
-        static: bool = False,
     ):
-        return _Spinner(icons=Icons.ARROW, rate=rate, prompt=prompt, static=static, total=total)
+        return _Spinner(icons=Icons.ARROW, rate=rate, prompt=prompt, total=total)
 
     @staticmethod
     def box(
         prompt: str,
         rate: float = 0.25,
         total: int | None = None,
-        static: bool = False,
     ):
-        return _Spinner(icons=Icons.BOX, rate=rate, prompt=prompt, static=static, total=total)
+        return _Spinner(icons=Icons.BOX, rate=rate, prompt=prompt, total=total)
 
     @staticmethod
     def explode(
         prompt: str,
         rate: float = 0.25,
         total: int | None = None,
-        static: bool = False,
     ):
-        return _Spinner(icons=Icons.EXPLODE, rate=rate, prompt=prompt, static=static, total=total)
+        return _Spinner(icons=Icons.EXPLODE, rate=rate, prompt=prompt, total=total)
 
     @staticmethod
     def diamond(
         prompt: str,
         rate: float = 0.5,
         total: int | None = None,
-        static: bool = False,
     ):
-        return _Spinner(icons=Icons.DIAMOND, rate=rate, prompt=prompt, static=static, total=total)
+        return _Spinner(icons=Icons.DIAMOND, rate=rate, prompt=prompt, total=total)
 
     @staticmethod
     def stack(
         prompt: str,
         rate: float = 0.25,
         total: int | None = None,
-        static: bool = False,
     ):
-        return _Spinner(icons=Icons.STACK, rate=rate, prompt=prompt, static=static, total=total)
+        return _Spinner(icons=Icons.STACK, rate=rate, prompt=prompt, total=total)
 
     @staticmethod
     def triangle(
         prompt: str,
         rate: float = 0.25,
         total: int | None = None,
-        static: bool = False,
     ):
-        return _Spinner(icons=Icons.TRIANGLE, rate=rate, prompt=prompt, static=static, total=total)
+        return _Spinner(icons=Icons.TRIANGLE, rate=rate, prompt=prompt, total=total)
 
     @staticmethod
     def square(
         prompt: str,
         rate: float = 0.25,
         total: int | None = None,
-        static: bool = False,
     ):
-        return _Spinner(icons=Icons.SQUARE, rate=rate, prompt=prompt, static=static, total=total)
+        return _Spinner(icons=Icons.SQUARE, rate=rate, prompt=prompt, total=total)
 
     @staticmethod
     def quarter_circle(
         prompt: str,
         rate: float = 0.15,
         total: int | None = None,
-        static: bool = False,
     ):
-        return _Spinner(icons=Icons.QUARTER_CIRCLE, rate=rate, prompt=prompt, static=static, total=total)
+        return _Spinner(icons=Icons.QUARTER_CIRCLE, rate=rate, prompt=prompt, total=total)
     
     @staticmethod
     def half_circle(
         prompt: str,
         rate: float = 0.15,
         total: int | None = None,
-        static: bool = False,
     ):
-        return _Spinner(icons=Icons.HALF_CIRCLE, rate=rate, prompt=prompt, static=static, total=total)
+        return _Spinner(icons=Icons.HALF_CIRCLE, rate=rate, prompt=prompt, total=total)
 
     @staticmethod
     def corner(
         prompt: str,
         rate: float = 0.25,
         total: int | None = None,
-        static: bool = False,
     ):
-        return _Spinner(icons=Icons.CORNER, rate=rate, prompt=prompt, static=static, total=total)
+        return _Spinner(icons=Icons.CORNER, rate=rate, prompt=prompt, total=total)
 
     @staticmethod
     def fish(
         prompt: str,
         rate: float = 0.25,
         total: int | None = None,
-        static: bool = False,
     ):
-        return _Spinner(icons=Icons.FISH, rate=rate, prompt=prompt, static=static, total=total, format="suffix")
+        return _Spinner(icons=Icons.FISH, rate=rate, prompt=prompt, total=total, format="suffix")
