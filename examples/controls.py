@@ -1,13 +1,13 @@
 from conterm.control import Key, Mouse, Event, Button, Listener, eprint, keys
 
-def on_key(event: Key) -> bool | None:
+def on_key(event: Key, _) -> bool | None:
     """Handler for key events."""
     match event:
         case "ctrl+alt+d":
             return False
     eprint(event)
 
-def on_mouse(event: Mouse) -> bool | None:
+def on_mouse(event: Mouse, _) -> bool | None:
     """Handler for mouse events."""
     if Event.DRAG_MIDDLE_CLICK:
         eprint(event)

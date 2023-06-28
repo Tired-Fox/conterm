@@ -55,7 +55,6 @@ class KeyCode:
             "CTRL_ALT_SHIFT_RIGHT": "\x1b[1;8C",
             "CTRL_ALT_SHIFT_LEFT": "\x1b[1;8D",
 
-            "SPACE": " ",
             "BACKSPACE": "\x7f",
             "ESC": "\x1b",
             "END": "\x1b[F",
@@ -136,6 +135,8 @@ class KeyCode:
             if ctrl:
                 if (key := self._keys.get(f"CTRL_{key.upper()}")) is not None:
                     return f"{alt}{key}"
+            elif key == " ":
+                return " "
             elif key.isalpha():
                 return f"{alt}{key}"
 

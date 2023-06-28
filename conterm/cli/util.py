@@ -1,7 +1,12 @@
 import contextlib
 from io import StringIO
 from typing import Any, Callable, Literal, overload
-from functools import wraps
+
+__all__ = [
+    "catch_stdout",
+    "catch_stderr",
+    "run_click"
+]
 
 # Trick type system to think a string is returned if result is set to False
 @overload

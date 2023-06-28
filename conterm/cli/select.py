@@ -1,51 +1,137 @@
 from __future__ import annotations
 from sys import stdout
+import sys
 from typing import Any, Literal, overload
 from conterm.control.ansi.actions import del_line, up
 from conterm.control.ansi import InputManager, Key, Listener
+from conterm.control.ansi.event import eprint
 
 from conterm.printing.markup import Markup
 
-@overload
-def prompt(_prompt: str, *, keep: bool = True, color: bool = True, yes_no: Literal[False] = False) -> str:
-    ...
+__all__ = [
+    "prompt",
+    "select",
+    "multi_select"
+]
 
-@overload
-def prompt(_prompt: str, *, keep: bool = True, color: bool = True, yes_no: Literal[True] = True) -> bool:
-    ...
+# PERF: Optimize methods and combine duplicate code for V1
 
-def prompt(_prompt: str, *, keep: bool = True, color: bool = True, yes_no: bool = False) -> str | bool:
-    result = ""
+def _select_clear_(options, prompt, help, msg=False):
+    """Clear select text."""
+    count = options
+    if prompt != "":
+        count += 1
+    if help:
+        count += 2
+    if msg:
+        count += 1
+    up(count)
+    del_line(count)
 
-    if yes_no:
-        result = True
-        stdout.write(_prompt.strip() + "[Y/n] ")
+def _yes_no_(prompt, keep, color):
+    def write(_):
+        stdout.write(prompt + "[Y/n] ")
         stdout.flush()
-        for event in InputManager.watch():
-            if event == "KEY":
-                if event.key == "y" or event.key == "Y":
-                    result = True
-                    break
-                elif event.key == "n" or event.key == "N":
-                    result = False
-                    break
-                elif event.key == "enter":
-                    break
-    else:
-        result = input(f"{_prompt.strip()} ")
 
-    if not keep or color:
-        if not yes_no:
-            up() 
+    def clear():
         del_line()
 
-    if color and keep:
-        if yes_no:
-            Markup.print(f"[242]{_prompt.strip()} [yellow]{'yes' if result else 'no'}")
-        else:
-            Markup.print(f"[242]{_prompt.strip()} [yellow]{result}")
+    def on_key(event, state):
+        if event == "y" or event == "Y":
+            state["result"] = True
+            return False
+        elif event == "n" or event == "N":
+            state["result"] = False
+            return False
+        elif event.key == "enter":
+            return False
 
-    return result
+    state = {
+        "result": True,
+    }
+
+    write(state["result"])
+    with Listener(on_key=on_key, state=state) as listener:
+        listener.join()
+
+    if not keep or color:
+        clear()
+
+    if color and keep:
+        Markup.print(f"[242]{prompt} [yellow]{'yes' if state['result'] else 'no'}")
+
+    return state["result"]
+
+def _uinput_(prompt, keep, color, password):
+    def clear():
+        if password:
+            up()
+            del_line(2)
+        else:
+            del_line()
+
+    def write(result, hide: bool):
+        if password:
+            stdout.write(f"{prompt} {'*' * len(result) if hide else result}\n[alt+h = show/hide]")
+            stdout.flush()
+        else:
+            stdout.write(f"{prompt} {'*' * len(result) if hide else result}")
+            stdout.flush()
+
+    def on_key(event, state):
+        if event.key == "enter":
+            return False
+        elif event.key == "backspace":
+            state["result"] = state["result"][:-1]
+            clear()
+            write(state["result"], state["hide"])
+        elif event.key == "alt+h" and password:
+            state["hide"] = not state["hide"] 
+            clear()
+            write(state["result"], state["hide"])
+        elif len(str(event.key)) == 1:
+            state["result"] += str(event.key)
+            clear()
+            write(state["result"], state["hide"])
+
+    state = {
+        "result": "",
+        "hide": password
+    }
+
+    write(state["result"], state["hide"])
+    with Listener(on_key=on_key, state=state) as listener:
+        listener.join()
+
+    if not keep or color:
+        clear()
+
+    if color and keep:
+        Markup.print(f"[242]{prompt} [yellow]{'*' * len(state['result']) if password else state['result']}")
+
+    return state["result"]
+
+def prompt(_prompt: str, *, password: bool = False, keep: bool = True, color: bool = True) -> str | bool:
+    """Prompt the user for input. This can either be text or Yes/no.
+
+    Args:
+        _prompt (str): The prompt to display to the user. If ending with `?` then
+            the prompt becomes a Yes/no prompt. Otherwise it must end with `:`
+        password (bool): Whether the input is a password. Only applied to normal iput.
+            This will hide all input but still collect what is entered.
+        keep (bool): Whether to erase the prompt/input after it is submitted
+        color (bool): Whether to color the result when it is displayed
+    """
+    _prompt = _prompt.strip()
+    if not _prompt.endswith((":", "?")):
+        raise ValueError("Prompts must end with ':' or '?'")
+
+    yes_no = _prompt.endswith("?")
+
+    if yes_no:
+        return _yes_no_(_prompt, keep, color)
+    else:
+        return _uinput_(_prompt, keep, color, password)
 
 @overload
 def select(
@@ -55,7 +141,8 @@ def select(
     default: int | None = None,
     style: Literal["icon", "color"] = "icon",
     color: str = "yellow",
-    icons: list[str] = ["○", "◉"],
+    title: str | None = None,
+    icons: tuple[str, str] = ("○", "◉"),
     help: bool = True
 ) -> str:
     ...
@@ -68,7 +155,8 @@ def select(
     default: int | None = None,
     style: Literal["icon", "color"] = "icon",
     color: str = "yellow",
-    icons: list[str] = ["○", "◉"],
+    title: str | None = None,
+    icons: tuple[str, str] = ("○", "◉"),
     help: bool = True
 ) -> tuple[str, Any]:
     ...
@@ -80,22 +168,27 @@ def select(
     default: int | None = None,
     style: Literal["icon", "color"] = "icon",
     color: str = "yellow",
-    icons: list[str] = ["○", "◉"],
+    title: str | None = None,
+    icons: tuple[str, str] = ("○", "◉"),
     help: bool = True
 ) -> str | tuple[str, Any]:
-    """Select (radio) terminal input."""
+    """Select (radio) terminal input.
 
-    def clear():
-        """Clear select text."""
-        count = len(options)
-        if prompt != "":
-            count += 1
-        if help:
-            count += 2
-        up(count)
-        del_line(count)
+    Args:
+        prompt (str | None): The prompt to display above the options.
+        defaults (int | None): Optional line to start as selected.
+        style ("icon", "color"): Style of how the options are printed.
+        color (str): Color to use while printing the select options.
+        title (str | None): The text to use when displaying the selection option(s).
+        icons (tuple[str, str]): Icons for not selected and selected respectively.
+        help (bool): Whether to print select help info at bottom of print.
 
-    def select_print(line: int):
+    Returns:
+        Filtered list[str] if list[str] was provided as options.
+        Filtered dict[str, Any] if dict[str, Any] was provided as options.
+    """
+
+    def write(line: int):
         """Print prompt, select options, and help."""
         if prompt != "":
             print(prompt)
@@ -118,13 +211,13 @@ def select(
         if event == "j" or event == "down":
             if state['line'] < len(options) - 1:
                 state['line'] += 1
-                clear()
-                select_print(state['line'])
+                _select_clear_(len(options), prompt, help)
+                write(state['line'])
         elif event == "k" or event == "up":
             if state['line'] > 0:
                 state['line'] -= 1
-                clear()
-                select_print(state['line'])
+                _select_clear_(len(options), prompt, help)
+                write(state['line'])
         elif event == "enter":
             return False
     
@@ -133,20 +226,20 @@ def select(
     }
 
     #custom select print
-    select_print(state['line'])
+    write(state['line'])
 
     with Listener(on_key=on_key, state=state) as listener:
         listener.join()
 
-    clear()
+    _select_clear_(len(options), prompt, help)
     prompt = prompt if prompt != "" else "\\[SELECT]:"
 
     if isinstance(options, dict):
         selection = list(options.keys())[state['line']]
-        Markup.print(f"[242]{prompt} [yellow]{selection}")
+        Markup.print(f"[242]{title or prompt}  [yellow]{selection}")
         return selection, options[selection]
 
-    Markup.print(f"[242]{prompt} [yellow]{options[state['line']]}")
+    Markup.print(f"[242]{title or prompt}  [yellow]{options[state['line']]}")
     return options[state['line']]
 
 
@@ -156,9 +249,11 @@ def multi_select(
     *,
     prompt: str = "",
     defaults: list[int] | None = None,
-    style: Literal["icon", "color"],
+    style: Literal["icon", "color"] = "icon",
     color: str = "yellow",
-    icons: list[str] = ["□", "▣"],
+    title: str | None = None,
+    icons: tuple[str, str] = ("□", "▣"),
+    allow_empty: bool = False,
     help: bool = True,
 ) -> dict[str, str]:
     ...
@@ -169,9 +264,11 @@ def multi_select(
     *,
     prompt: str = "",
     defaults: list[int] | None = None,
-    style: Literal["icon", "color"],
+    style: Literal["icon", "color"] = "icon",
     color: str = "yellow",
-    icons: list[str] = ["□", "▣"],
+    title: str | None = None,
+    icons: tuple[str, str] = ("□", "▣"),
+    allow_empty: bool = False,
     help: bool = True
 ) -> list[str]:
     ...
@@ -183,26 +280,29 @@ def multi_select(
     defaults: list[int] | None = None,
     style: Literal["icon", "color"] = "icon",
     color: str = "yellow",
-    icons: list[str] = ["□", "▣"],
+    title: str | None = None,
+    icons: tuple[str, str] = ("□", "▣"),
     allow_empty: bool = False,
     help: bool = True
 ) -> list[str] | dict[str, Any]:
-    """Multi select (radio) terminal input."""
+    """Multi select (radio) terminal input.
     
-    def clear(state):
-        """Clear select text."""
-        count = len(options)
-        if prompt != "":
-            count += 1
-        if help:
-            count += 2
-        if "msg" in state and state['msg'] != "":
-            count += 1
-            state['msg'] = ""
-        up(count)
-        del_line(count)
+    Args:
+        prompt (str | None): The prompt to display above the options.
+        defaults (list[int] | None): Optionally have certain lines pre selected.
+        style ("icon", "color"): Style of how the options are printed.
+        color (str): Color to use while printing the multi select options.
+        title (str | None): The text to use when displaying the selection option(s).
+        icons (tuple[str, str]): Icons for not selected and selected respectively.
+        allow_empty (bool): Whether to allow user to submit empty results. Defaults to False.
+        help (bool): Whether to print multi select help info at bottom of print.
 
-    def select_print(line: int, state):
+    Returns:
+        Filtered list[str] if list[str] was provided as options.
+        Filtered dict[str, Any] if dict[str, Any] was provided as options.
+    """
+    
+    def write(line: int, state):
         """Print prompt, select options, and help."""
         if prompt != "":
             print(prompt)
@@ -228,25 +328,25 @@ def multi_select(
         if event == "j" or event == "down":
             if state['line'] < len(options) - 1:
                 state['line'] += 1
-            clear(state)
-            select_print(state['line'], state)
+            _select_clear_(len(options), prompt, help, "msg" in state and state['msg'] != "")
+            write(state['line'], state)
         elif event == "k" or event == "up":
             if state['line'] > 0:
                 state['line'] -= 1
-            clear(state)
-            select_print(state['line'], state)
-        elif event == "space":
+            _select_clear_(len(options), prompt, help, "msg" in state and state['msg'] != "")
+            write(state['line'], state)
+        elif event == " ":
             if state['line'] in state['selected']:
                 state['selected'].remove(state['line'])
             else:
                 state['selected'].add(state['line'])
-            clear(state)
-            select_print(state['line'], state)
+            _select_clear_(len(options), prompt, help, "msg" in state and state['msg'] != "")
+            write(state['line'], state)
         elif event == "enter":
-            if len(state['selected']) == 0 and not allow_empty:
-                clear(state)
-                state['msg'] = "Must select at least one option"
-                select_print(state['line'], state)
+            if not allow_empty and len(state['selected']) == 0:
+                _select_clear_(len(options), prompt, help, "msg" in state and state['msg'] != "")
+                state['msg'] = "\x1b[31;1mMust select at least one option\x1b[39;22m"
+                write(state['line'], state)
             else:
                 return False
 
@@ -256,20 +356,20 @@ def multi_select(
     }
 
     #custom select print
-    select_print(0, state)
+    write(0, state)
 
     with Listener(on_key=on_key, state=state) as listener:
         listener.join()
 
-    clear(state)
+    _select_clear_(len(options), prompt, help, "msg" in state and state['msg'] != "")
     prompt = prompt if prompt != "" else "\\[MULTI SELECT]:"
 
     if isinstance(options, dict):
         selection = list(options.keys())
         selection = [selection[option] for option in state['selected']]
-        Markup.print(f"[242]{prompt} [yellow]\\[{', '.join(selection)}]")
+        Markup.print(f"[242]{title or prompt}  [yellow]\\[{', '.join(selection)}]")
         return {key: value for key, value in options.items() if key in selection}
     
     selection = [options[line] for line in state["selected"]]
-    Markup.print(f"[242]{prompt} [yellow]\\[{', '.join(selection)}]")
+    Markup.print(f"[242]{title or prompt}  [yellow]\\[{', '.join(selection)}]")
     return selection

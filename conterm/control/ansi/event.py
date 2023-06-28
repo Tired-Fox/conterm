@@ -5,10 +5,19 @@ The logic in this module helps to indetify and compare events.
 from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
+from functools import cache
 import re
 from typing import Literal, Protocol, runtime_checkable
 
 from .keys import keys
+
+@cache
+def _build_chord_(modifiers: int, key: str):
+    ctrl = "ctrl+" if modifiers & Modifiers.Ctrl else ""
+    alt = "alt+" if modifiers & Modifiers.Alt else ""
+    if key in keys:
+        return f"{ctrl}{alt}{keys.by_code(key)}"
+    return f"{ctrl}{alt}{key}"
 
 __ANSI__ = re.compile(
     r"(?P<sequence>\x1b\[(?P<data>(?:\d{1,3};?)*)(?P<event>[ACBDmMZFHPQRS~]{1,2})?)|(\x1b(?!O))|(?P<key>.{1,3}|[\n\r\t])"
@@ -208,6 +217,18 @@ class Key:
             self.key = "unkown"
         # mod, ckey, esc, data, event
 
+    def is_ascii(self):
+        return len(self.key) == 1 and self.key.isascii()
+
+    def ctrl(self) -> bool:
+        return self.modifiers & Modifiers.Ctrl != 0
+
+    def alt(self) -> bool:
+        return self.modifiers & Modifiers.Alt != 0
+
+    def shift(self) -> bool:
+        return self.modifiers & Modifiers.Shift != 0 or self.key.isupper()
+
     def __eq__(self, __value: object) -> bool:
         if isinstance(__value, str):
             return keys.by_chord(__value) == self.code
@@ -219,11 +240,7 @@ class Key:
         return f"\x1b[33m{self}\x1b[39m"
 
     def __str__(self):
-        ctrl = "ctrl+" if self.modifiers & Modifiers.Ctrl else ""
-        alt = "alt+" if self.modifiers & Modifiers.Alt else ""
-        if self.key in keys:
-            return f"{ctrl}{alt}{keys.by_code(self.key)}"
-        return f"{ctrl}{alt}{self.key}"
+        return _build_chord_(self.modifiers, self.key)
 
     def __repr__(self):
         return f"KeyEvent({self.code!r}, key={self.key}, {self.modifiers})"
