@@ -4,7 +4,7 @@ from typing import Any, Literal, overload
 from conterm.control.ansi.actions import del_line, up
 from conterm.control.ansi import Key, Listener
 
-from conterm.printing.markup import Markup
+from conterm.pretty.markup import Markup
 
 __all__ = [
     "prompt",

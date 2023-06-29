@@ -1,6 +1,6 @@
 from conterm.control.ansi.actions import set_title
-from conterm.printing import pprint
-from conterm.printing.themes import DRACULA, GRUVBOX, NORD, Catpuccin
+from conterm.pretty import pprint
+from conterm.pretty.themes import DRACULA, GRUVBOX, NORD, Catpuccin
 
 class Something:
     pass

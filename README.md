@@ -1,4 +1,4 @@
-# conterm
+# Conterm
 
 <!-- Header Badges -->
 
@@ -15,16 +15,31 @@
 </div>
 
 <!-- End Header -->
-**Rich Win32 Impl**
-https://github.com/Textualize/rich/blob/master/rich/_win32_console.py
 
-**ReadConsoleInput**
+Conterm is a simple to use terminal interaction library.
+This includes:
 
-- https://learn.microsoft.com/en-us/windows/console/readconsoleinput
-- _Example_
-  - https://learn.microsoft.com/en-us/windows/console/reading-input-buffer-events
+- `conterm.control`
+  - Keyboard input
+  - Mouse input
+  - Terminal actions like moving the cursor, deleting lines, etc...
+- `conterm.pretty`
+  - Pretty printing python objects
+  - Simple inline markup for strings
+  - Ansi sequence stripping
+- `conterm.logging`
+  - Simple thread safe logging
+- `conterm.cli`
+  - Prompts: includes yes/no prompts, hidden password prompts, and normal input prompts
+  - Radio Select: List of options are displayed and the user can select one of many options.
+  - Multi Select: List of options are displayed and the user can select multiple of many options.
+  - Task Manager: This is a thread safe object that prints and updates a region in the terminal over time. When it is active no other printing to stdout should occur. The task manager lets you add messages, spinners, and progress bars with intuitive ways of updating progress over time.
 
-> note: Don't forget to change `git config http.sslVerify false`
+With all the above features in mind, make sure to check out the [examples](./examples/) to see the different
+features in action.
+
+> note: This library is experimental and a work in progress. Any and all feedback is welcome.
+
 <!-- Footer Badges --!>
 
 <br>

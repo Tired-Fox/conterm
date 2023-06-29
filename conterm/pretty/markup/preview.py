@@ -1,14 +1,10 @@
 from . import Markup
 
-def xterm_colors(markup: bool = False) -> str:
+def xterm_colors() -> str:
     """Generate a xterm color table using the markup module.
 
-    Args:
-        markup (bool): Whether to return the result as raw markup or as ansi.
-            True specifiec that it is returned as markup.
-
     Returns:
-        Ansi encoded xterm colors or markup of xterm colors
+        Markup of xterm colors
     """
 
     output = "[^full]"
@@ -25,7 +21,7 @@ def xterm_colors(markup: bool = False) -> str:
 
     cursor = 16
     output += "[^full]"
-    for row in range(1, 4):
+    for _ in range(1, 4):
         for column in range(37):
             if column == 36:
                 continue
@@ -36,36 +32,23 @@ def xterm_colors(markup: bool = False) -> str:
             break
     output += "[/]"
 
-    if markup:
-        return output
-    return Markup.parse(output)
+    return output
 
-def system_colors(markup: bool = False) -> str:
+def system_colors() -> str:
     """Generate a system color table using the markup module.
 
-    Args:
-        markup (bool): Whether to return the result as raw markup or as ansi.
-            True specifiec that it is returned as markup.
-
     Returns:
-        Ansi encoded system colors or markup of system colors
+        Markup of system colors
     """
     output = ("[^full black @white]black[red /bg] red [green]green [yellow]yellow[/^]\n"
     + "[^full blue]blue [magenta]magenta [cyan]cyan [white]white[/]")
 
-    if markup:
-        return output
-    return Markup.parse(output)
+    return output
 
-def rgb_colors(markup: bool = False) -> str:
+def rgb_colors() -> str:
     """Generate a rgb color table using the markup module.
-
-    Args:
-        markup (bool): Whether to return the result as raw markup or as ansi.
-            True specifiec that it is returned as markup.
-
     Returns:
-        Ansi encoded rgb colors or markup of rgb colors
+        Markup of rgb color
     """
     #     g
     # r < ^ > b
@@ -90,6 +73,4 @@ def rgb_colors(markup: bool = False) -> str:
         green += step * 2
     output += "[/]"
 
-    if markup:
-        return output
-    return Markup.parse(output)
+    return output

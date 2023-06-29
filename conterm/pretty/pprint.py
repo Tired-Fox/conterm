@@ -13,8 +13,8 @@ def pprint(*args: Any, sep: str = " ", end: str = "\n", theme: Theme = THEME):
     """Pretty print text and objects to stdout.
 
     Args:
-        str: Processes and conterm.printing.markup
-        object: print the representation with color using conterm.printing.markup
+        str: Processes and conterm.pretty.markup
+        object: print the representation with color using conterm.pretty.markup
     """
 
     # recursive

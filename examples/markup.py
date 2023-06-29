@@ -1,6 +1,6 @@
 from conterm.control.ansi.actions import set_title
-from conterm.printing import Markup
-from conterm.printing.markup.preview import rgb_colors, system_colors, xterm_colors
+from conterm.pretty import Markup
+from conterm.pretty.markup.preview import rgb_colors, system_colors, xterm_colors
 
 
 if __name__ == "__main__":
@@ -8,13 +8,13 @@ if __name__ == "__main__":
 
     Markup.print(f"""\
 [b]System Colors:[/b]
-{system_colors(True)}
+{system_colors()}
 
 [b]Xterm Colors:[/b]
-{xterm_colors(True)}
+{xterm_colors()}
 
 [b]RGB/Hex Colors:[/b]
-{rgb_colors(True)}
+{rgb_colors()}
 
 [b]Formatting:[/b] [i]italic[/i] [b]bold[/b] [u]underline[/u] [s]strikethrough[/s] \
 [bl]blink[/bl] [r]reversed[/r] [~https://example.com]url[/]

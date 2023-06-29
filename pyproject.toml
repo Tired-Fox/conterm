@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "conterm"
-version = "0.1.0"
-description = "Python library built around terminal input"
+version = "0.0.1"
+description = "Simple library built around making terminal interaction easy."
 readme = "README.md"
 license = "MIT"
 authors = [
@@ -16,7 +16,7 @@ classifiers = [
   "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
 ]
-requires-python = ">=3.9"
+requires-python = ">=3.8"
 dependencies = []
 
 [project.optional-dependencies]
@@ -29,6 +29,7 @@ dev = [
   "ruff",
   "requests"
 ],
+# This is if you want to use the run wrapper to manually run click cli with custom args
 click = ["click"]
 
 [project.urls]
