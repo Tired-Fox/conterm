@@ -1,11 +1,14 @@
 from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
+from sys import stderr
+import sys
 from threading import Event, Lock, Thread
 from time import sleep
 from typing import Literal
+from queue import Queue
 
-from conterm.control.ansi.actions import del_line, move_to, pos
+from conterm.control.ansi.actions import move_to, pos
 
 __all__ = [
     "Icons",
@@ -36,6 +39,24 @@ class Icons:
     CLASSIC = "◜◝◞◟"
     FISH = [">))'>", " >))'>", "  >))'>", "   >))'>", "    >))'>", "   <'((<", "  <'((<", " <'((<"]
 
+class Output:
+    def __init__(self) -> None:
+        self.lock = Lock()
+        self.messages = Queue()
+
+    def write(self, text: str):
+        with self.lock:
+            self.messages.put(text)
+
+    def flush(self):
+        pass
+
+def fileno(file_or_fd):
+    fd = getattr(file_or_fd, 'fileno', lambda: file_or_fd)()
+    if not isinstance(fd, int):
+        raise ValueError("Expected a file (`.fileno()`) or a file descriptor")
+    return fd
+
 class TaskManager(Thread):
     def __init__(self, *tasks: Task, clear: bool = False) -> None:
         super().__init__(daemon=True)
@@ -47,16 +68,28 @@ class TaskManager(Thread):
         self.exc = None
         self.clear = clear
 
+        self._out_ = sys.stdout
+        sys.stdout = Output()
+
+        self.messages = []
+
     def run(self):
         try:
             while not self.__stop__.is_set():
                 self.__lock__.acquire()
+
+                while sys.stdout.messages.qsize() > 0:
+                    self.messages.append(sys.stdout.messages.get())
                 move_to(0, self._line_)
                 # Got to first line of manager then overwrite
-                print()
+                self._out_.write("\n")
                 for task in self.__tasks__:
                     task.update(self._rate_)
-                    print(task)
+                    self._out_.write(f"{task}\n")
+                if len(self.messages) > 0:
+                    messages = ''.join(self.messages)
+                    self._out_.write(f"\n\x1b[1m[stdout]\x1b[22m\n{messages}")
+                self._out_.flush()
                 self.__lock__.release()
                 sleep(self._rate_)
         except KeyboardInterrupt as interrupt:
@@ -87,23 +120,35 @@ class TaskManager(Thread):
         with self.__lock__:
             self.__tasks__.remove(subtask)
 
+    def __del__(self):
+        if self._out_ is not None:
+            sys.stdout = self._out_
+            self._out_ = None
+            sys.stdout.flush()
+
     def stop(self):
-        self.__stop__.set()
         self.join()
-        if self.clear:
-            move_to(0, self._line_)
-            del_line(sum(map(len, self.__tasks__)))
-        else:
-            # Print final state of tasks
-            self.__lock__.acquire()
-            move_to(0, self._line_)
-            print()
-            for task in self.__tasks__:
-                print(task)
-            self.__lock__.release()
 
     def join(self):
+        self.__stop__.set()
         Thread.join(self)
+
+        # Print final state of tasks
+        move_to(0, self._line_)
+        # Got to first line of manager then overwrite
+        self._out_.write("\n")
+        for task in self.__tasks__:
+            task.update(self._rate_)
+            self._out_.write(f"{task}\n")
+        if len(self.messages) > 0:
+            messages = ''.join(self.messages)
+            self._out_.write(f"\n\x1b[1m[stdout]\x1b[22m\n{messages}\x1b[1m[/stdout]\x1b[22m\n")
+        self._out_.flush()
+
+        if self._out_ is not None:
+            sys.stdout = self._out_
+            self._out_ = None
+
         if self.exc is not None:
             raise self.exc
 
@@ -254,7 +299,7 @@ class Spinner(Task):
         with self._lock_:
             for task in self._tasks_:
                 if isinstance(task, str):
-                    result.append(f"  {task}")
+                    result.append(f"    {task}")
                 elif isinstance(task, Task):
                     result.extend([f'  {l}' for l in task.__lines__()])
         return result

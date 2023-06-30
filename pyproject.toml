@@ -28,7 +28,7 @@ dev = [
   "black",
   "ruff",
   "requests"
-],
+]
 # This is if you want to use the run wrapper to manually run click cli with custom args
 click = ["click"]
 

@@ -188,6 +188,3 @@ def supports_ansi() -> bool:
     finally: pass
 
     return char != "" and char.startswith("\x1b[") and char.endswith("R")
-
-if not supports_ansi():
-    raise ImportError("Cannot use ansi input manager when the terminal does not support ansi.") 

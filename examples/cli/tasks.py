@@ -20,6 +20,19 @@ def increment(progress: Progress, duration: float):
         sleep(duration)
 
 if __name__ == "__main__":
+
+    tasks = TaskManager(Spinner(prompt="Waiting for inputs"))
+    tasks.start()
+
+    sleep(1)
+    print("Hello World")
+    sleep(2)
+    print("Hello World 2")
+    sleep(3)
+    tasks.stop()
+
+    print("Normal output")
+
     set_title("Tasks Example")
 
     tman = TaskManager(Spinner(prompt="Some Prompt", rate=0.25))

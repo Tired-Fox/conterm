@@ -1,8 +1,7 @@
 from __future__ import annotations
-from functools import cache
 from os import get_terminal_size
 from sys import stdout
-from typing import Any, Callable, Literal, overload
+from typing import Any, Callable, Iterable, Literal, overload
 from conterm.control.ansi.actions import del_line, erase_display, move_to, pos, up
 from conterm.control.ansi import Key, Listener
 
@@ -13,6 +12,8 @@ __all__ = [
     "select",
     "multi_select"
 ]
+
+scolor = "green"
 
 def clear(line):
     """Clear select text."""
@@ -47,7 +48,7 @@ def _yes_no_(prompt, keep, color, title):
         clear(start)
 
     if color and keep:
-        Markup.print(f"[242]{title or prompt} [yellow]{'yes' if state['result'] else 'no'}")
+        Markup.print(f"[242]{title or prompt} [{scolor}]{'yes' if state['result'] else 'no'}")
 
     return state["result"]
 
@@ -91,7 +92,7 @@ def _uinput_(prompt, default, keep, color, password, title):
         clear(start)
 
     if color and keep:
-        Markup.print(f"[242]{title or prompt} [yellow]{'*' * len(state['result']) if password else state['result']}")
+        Markup.print(f"[242]{title or prompt} [{scolor}]{'*' * len(state['result']) if password else state['result']}")
 
     return state["result"]
 
@@ -260,11 +261,13 @@ def select(
 
     if isinstance(options, dict):
         selection = list(options.keys())[state['line']]
-        Markup.print(f"[242]{title or prompt}  [yellow]{selection}")
-        return selection, options[selection]
+        result = selection, options[selection] 
+    else:
+        selection = options[state['line']]
+        result = selection
 
-    Markup.print(f"[242]{title or prompt}  [yellow]{options[state['line']]}")
-    return options[state['line']]
+    Markup.print(f"[242]{title or prompt} [{scolor}]{selection}")
+    return result 
 
 
 @overload
@@ -272,7 +275,7 @@ def multi_select(
     options: dict[str, Any],
     *,
     prompt: str = "",
-    defaults: list[int] | None = None,
+    defaults: Iterable[int] | None = None,
     preprocess: Callable[[str], str] | None = None,
     page_size: int | None = None,
     style: Literal["icon", "color"] = "icon",
@@ -289,7 +292,7 @@ def multi_select(
     options: list[str],
     *,
     prompt: str = "",
-    defaults: list[int] | None = None,
+    defaults: Iterable[int] | None = None,
     preprocess: Callable[[str], str] | None = None,
     page_size: int | None = None,
     style: Literal["icon", "color"] = "icon",
@@ -305,7 +308,7 @@ def multi_select(
     options: list[str] | dict[str, Any],
     *,
     prompt: str = "",
-    defaults: list[int] | None = None,
+    defaults: Iterable[int] | None = None,
     preprocess: Callable[[str], str] | None = None,
     page_size: int | None = None,
     style: Literal["icon", "color"] = "icon",
@@ -332,7 +335,7 @@ def multi_select(
         Filtered dict[str, Any] if dict[str, Any] was provided as options.
     """
     start = pos()[1]
-    page_size = min(page_size or 5, get_terminal_size().lines - 3)
+    page_size = min(page_size if page_size is not None else 5, get_terminal_size().lines - 3)
 
     def get_default_index(default: str) -> int:
         if isinstance(options, list):
@@ -444,9 +447,10 @@ def multi_select(
     if isinstance(options, dict):
         selection = list(options.keys())
         selection = [selection[option] for option in state['selected']]
-        Markup.print(f"[242]{title or prompt}  [yellow]\\[{', '.join(selection)}]")
-        return {key: value for key, value in options.items() if key in selection}
+        result = {key: value for key, value in options.items() if key in selection} 
+    else:
+        selection = [options[line] for line in state["selected"]]
+        result = selection
     
-    selection = [options[line] for line in state["selected"]]
-    Markup.print(f"[242]{title or prompt}  [yellow]\\[{', '.join(selection)}]")
+    Markup.print(f"[242]{title or prompt}[/] \\[{', '.join(f'[{scolor}]{opt}[/]' for opt in selection)}]")
     return selection
