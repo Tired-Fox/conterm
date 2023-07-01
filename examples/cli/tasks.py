@@ -9,18 +9,19 @@ independant of all other tasks.
 Sleep is used to act as if something that tasks time is occuring
 """
 from threading import Thread
-from conterm.cli import TaskManager, Spinner, Progress, Icons
 from time import sleep
 
+from conterm.cli import Icons, Progress, Spinner, TaskManager
 from conterm.control.ansi.actions import set_title
+
 
 def increment(progress: Progress, duration: float):
     while not progress.complete:
         progress.increment()
         sleep(duration)
 
-if __name__ == "__main__":
 
+if __name__ == "__main__":
     tasks = TaskManager(Spinner(prompt="Waiting for inputs"))
     tasks.start()
 
@@ -29,6 +30,7 @@ if __name__ == "__main__":
     sleep(2)
     print("Hello World 2")
     sleep(3)
+    tasks[-1].complete = True
     tasks.stop()
 
     print("Normal output")
@@ -58,7 +60,7 @@ if __name__ == "__main__":
         prompt="Setting up file system",
         # Target finish total for the spinners progress. This is used with `increment`
         target=3,
-        icons=Icons.STACK
+        icons=Icons.STACK,
     )
 
     # Add the new spinner to the first spinner in TaskManager as a subtask

@@ -1,43 +1,50 @@
 from __future__ import annotations
+
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass
+from queue import Queue
 from sys import stderr
-import sys
 from threading import Event, Lock, Thread
 from time import sleep
 from typing import Literal
-from queue import Queue
 
 from conterm.control.ansi.actions import move_to, pos
 
-__all__ = [
-    "Icons",
-    "TaskManager",
-    "Spinner",
-    "Progress",
-    "Task"
-]
+__all__ = ["Icons", "TaskManager", "Spinner", "Progress", "Task"]
+
 
 @dataclass
 class Icons:
     """Predefined loading spinner icons."""
-    DOTS = '⣾⣽⣻⢿⡿⣟⣯⣷'
-    BOUNCE = '⠁⠂⠄⡀⢀⠠⠐⠈'
-    VERTICAL = '▁▂▃▄▅▆▇█▇▆▅▄▃▁'
-    HORIZONTAL = '▉▊▋▌▍▎▏▎▍▌▋▊▉'
-    ARROW = '←↖↑↗→↘↓↙'
-    BOX = '▖▘▝▗'
-    CROSS = '┤┘┴└├┌┬┐'
-    ELLIPSE = ['.', '..', '...']
-    EXPLODE = '.oO@*'
-    DIAMOND = '◇◈◆'
-    STACK = "⡀⡁⡂⡃⡄⡅⡆⡇⡈⡉⡊⡋⡌⡍⡎⡏⡐⡑⡒⡓⡔⡕⡖⡗⡘⡙⡚⡛⡜⡝⡞⡟⡠⡡⡢⡣⡤⡥⡦⡧⡨⡩⡪⡫⡬⡭⡮⡯⡰⡱⡲⡳⡴⡵⡶⡷⡸⡹⡺⡻⡼⡽⡾⡿⢀⢁⢂⢃⢄⢅⢆⢇⢈⢉⢊⢋⢌⢍⢎⢏⢐⢑⢒⢓⢔⢕⢖⢗⢘⢙⢚⢛⢜⢝⢞⢟⢠⢡⢢⢣⢤⢥⢦⢧⢨⢩⢪⢫⢬⢭⢮⢯⢰⢱⢲⢳⢴⢵⢶⢷⢸⢹⢺⢻⢼⢽⢾⢿⣀⣁⣂⣃⣄⣅⣆⣇⣈⣉⣊⣋⣌⣍⣎⣏⣐⣑⣒⣓⣔⣕⣖⣗⣘⣙⣚⣛⣜⣝⣞⣟⣠⣡⣢⣣⣤⣥⣦⣧⣨⣩⣪⣫⣬⣭⣮⣯⣰⣱⣲⣳⣴⣵⣶⣷⣸⣹⣺⣻⣼⣽⣾⣿" 
+
+    DOTS = "⣾⣽⣻⢿⡿⣟⣯⣷"
+    BOUNCE = "⠁⠂⠄⡀⢀⠠⠐⠈"
+    VERTICAL = "▁▂▃▄▅▆▇█▇▆▅▄▃▁"
+    HORIZONTAL = "▉▊▋▌▍▎▏▎▍▌▋▊▉"
+    ARROW = "←↖↑↗→↘↓↙"
+    BOX = "▖▘▝▗"
+    CROSS = "┤┘┴└├┌┬┐"
+    ELLIPSE = [".", "..", "..."]
+    EXPLODE = ".oO@*"
+    DIAMOND = "◇◈◆"
+    STACK = "⡀⡁⡂⡃⡄⡅⡆⡇⡈⡉⡊⡋⡌⡍⡎⡏⡐⡑⡒⡓⡔⡕⡖⡗⡘⡙⡚⡛⡜⡝⡞⡟⡠⡡⡢⡣⡤⡥⡦⡧⡨⡩⡪⡫⡬⡭⡮⡯⡰⡱⡲⡳⡴⡵⡶⡷⡸⡹⡺⡻⡼⡽⡾⡿⢀⢁⢂⢃⢄⢅⢆⢇⢈⢉⢊⢋⢌⢍⢎⢏⢐⢑⢒⢓⢔⢕⢖⢗⢘⢙⢚⢛⢜⢝⢞⢟⢠⢡⢢⢣⢤⢥⢦⢧⢨⢩⢪⢫⢬⢭⢮⢯⢰⢱⢲⢳⢴⢵⢶⢷⢸⢹⢺⢻⢼⢽⢾⢿⣀⣁⣂⣃⣄⣅⣆⣇⣈⣉⣊⣋⣌⣍⣎⣏⣐⣑⣒⣓⣔⣕⣖⣗⣘⣙⣚⣛⣜⣝⣞⣟⣠⣡⣢⣣⣤⣥⣦⣧⣨⣩⣪⣫⣬⣭⣮⣯⣰⣱⣲⣳⣴⣵⣶⣷⣸⣹⣺⣻⣼⣽⣾⣿"
     TRIANGLE = "◢◣◤◥"
     SQUARE = "◰◳◲◱"
     QUARTER_CIRCLE = "◴◷◶◵"
     HALF_CIRCLE = "◐◓◑◒"
     CLASSIC = "◜◝◞◟"
-    FISH = [">))'>", " >))'>", "  >))'>", "   >))'>", "    >))'>", "   <'((<", "  <'((<", " <'((<"]
+    FISH = [
+        ">))'>",
+        " >))'>",
+        "  >))'>",
+        "   >))'>",
+        "    >))'>",
+        "   <'((<",
+        "  <'((<",
+        " <'((<",
+    ]
+
 
 class Output:
     def __init__(self) -> None:
@@ -51,11 +58,13 @@ class Output:
     def flush(self):
         pass
 
+
 def fileno(file_or_fd):
-    fd = getattr(file_or_fd, 'fileno', lambda: file_or_fd)()
+    fd = getattr(file_or_fd, "fileno", lambda: file_or_fd)()
     if not isinstance(fd, int):
         raise ValueError("Expected a file (`.fileno()`) or a file descriptor")
     return fd
+
 
 class TaskManager(Thread):
     def __init__(self, *tasks: Task, clear: bool = False) -> None:
@@ -87,8 +96,8 @@ class TaskManager(Thread):
                     task.update(self._rate_)
                     self._out_.write(f"{task}\n")
                 if len(self.messages) > 0:
-                    messages = ''.join(self.messages)
-                    self._out_.write(f"\n\x1b[1m[stdout]\x1b[22m\n{messages}")
+                    messages = "".join(self.messages)
+                    self._out_.write(f"\x1b[1m[stdout]\x1b[22m\n{messages}")
                 self._out_.flush()
                 self.__lock__.release()
                 sleep(self._rate_)
@@ -141,8 +150,10 @@ class TaskManager(Thread):
             task.update(self._rate_)
             self._out_.write(f"{task}\n")
         if len(self.messages) > 0:
-            messages = ''.join(self.messages)
-            self._out_.write(f"\n\x1b[1m[stdout]\x1b[22m\n{messages}\x1b[1m[/stdout]\x1b[22m\n")
+            messages = "".join(self.messages)
+            self._out_.write(
+                f"\x1b[1m[stdout]\x1b[22m\n{messages}\x1b[1m[/stdout]\x1b[22m\n\n"
+            )
         self._out_.flush()
 
         if self._out_ is not None:
@@ -152,8 +163,15 @@ class TaskManager(Thread):
         if self.exc is not None:
             raise self.exc
 
+
 class Task:
-    def __init__(self, *tasks: str | Task, rate: float = 0.5, target: int = 0, callback: Callable | None = None):
+    def __init__(
+        self,
+        *tasks: str | Task,
+        rate: float = 0.5,
+        target: int = 0,
+        callback: Callable | None = None,
+    ):
         self._lock_ = Lock()
         self._plock_ = Lock()
         self._count_ = 0
@@ -228,7 +246,7 @@ class Task:
             count = 1
             for task in self._tasks_:
                 if isinstance(task, str):
-                   count += 1 
+                    count += 1
                 else:
                     count += len(task)
 
@@ -246,6 +264,7 @@ class Task:
     def __str__(self) -> str:
         return "\n".join(self.__lines__())
 
+
 class Spinner(Task):
     def __init__(
         self,
@@ -254,7 +273,7 @@ class Spinner(Task):
         icons: str | list[str] = Icons.DOTS,
         rate: float = 0.2,
         format: Literal["p", "s"] = "p",
-        target: int = 0
+        target: int = 0,
     ):
         super().__init__(*tasks, rate=rate, target=target)
         self._prompt_ = prompt
@@ -281,7 +300,7 @@ class Spinner(Task):
 
     def __lines__(self) -> list[str]:
         result = ""
-        icon = self._icons_[self._index_] 
+        icon = self._icons_[self._index_]
         if self.complete:
             result = f"\x1b[32m●\x1b[39m {self._prompt_}"
             if self._target_ != 0:
@@ -301,11 +320,12 @@ class Spinner(Task):
                 if isinstance(task, str):
                     result.append(f"    {task}")
                 elif isinstance(task, Task):
-                    result.extend([f'  {l}' for l in task.__lines__()])
+                    result.extend([f"  {l}" for l in task.__lines__()])
         return result
 
+
 class Progress(Task):
-    FILL = '▏▎▍▌▋▊▉█'
+    FILL = "▏▎▍▌▋▊▉█"
 
     def __init__(
         self,
@@ -314,27 +334,27 @@ class Progress(Task):
         target: int,
         width: int = 10,
         format: Literal["arrow", "symbol", "fill"] = "fill",
-        symbol: str = '*',
+        symbol: str = "*",
         brackets: bool = True,
-        callback: Callable | None = None
+        callback: Callable | None = None,
     ):
         super().__init__(*tasks, target=target, callback=callback)
         # Progress bar specific data
         self._prompt_ = prompt
         self._brackets_ = ["[", "]"] if brackets else ["", ""]
-        self._length_ = len(prompt) + 1 + width + len(''.join(self._brackets_))
+        self._length_ = len(prompt) + 1 + width + len("".join(self._brackets_))
         self._symbol_ = symbol
         self._width_ = width
         self._format_ = format
 
     def __lines__(self) -> list[str]:
         result = ""
-        color = '\x1b[32m' if self.complete else ''
+        color = "\x1b[32m" if self.complete else ""
 
         with self._plock_:
             percent = self._total_ / self._target_
             index = self._width_ * percent
-            remain = int(len(self.FILL) * (index - int(index))) 
+            remain = int(len(self.FILL) * (index - int(index)))
             index = int(index)
             bar = ""
 
@@ -343,7 +363,7 @@ class Progress(Task):
                 if percent != 1:
                     bar += self.FILL[remain]
             elif self._format_ == "arrow":
-                bar = '-' * max(0, index)
+                bar = "-" * max(0, index)
                 if percent != 1:
                     bar += ">"
             elif self._format_ == "symbol":
@@ -357,5 +377,5 @@ class Progress(Task):
                 if isinstance(task, str):
                     result.append(f"  {task}")
                 elif isinstance(task, Task):
-                    result.extend([f'  {l}' for l in task.__lines__()])
+                    result.extend([f"  {l}" for l in task.__lines__()])
         return result

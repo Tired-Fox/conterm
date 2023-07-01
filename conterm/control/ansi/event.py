@@ -3,13 +3,15 @@
 The logic in this module helps to indetify and compare events.
 """
 from __future__ import annotations
+
+import re
 from dataclasses import dataclass
 from enum import Enum
 from functools import cache
-import re
 from typing import Literal, Protocol, runtime_checkable
 
 from .keys import keys
+
 
 @cache
 def _build_chord_(modifiers: int, key: str):
@@ -18,9 +20,11 @@ def _build_chord_(modifiers: int, key: str):
     """
     ctrl = "ctrl+" if modifiers & Modifiers.Ctrl else ""
     alt = "alt+" if modifiers & Modifiers.Alt else ""
+    shift = "shift+" if modifiers & Modifiers.Shift and len(key) > 1 else ""
     if key in keys:
-        return f"{ctrl}{alt}{keys.by_code(key)}"
-    return f"{ctrl}{alt}{key}"
+        return f"{ctrl}{alt}{shift}{keys.by_code(key)}"
+    return f"{ctrl}{alt}{shift}{key}"
+
 
 __ANSI__ = re.compile(
     r"(?P<sequence>\x1b\[(?P<data>(?:\d{1,3};?)*)(?P<event>[ACBDmMZFHPQRS~]{1,2})?)|(\x1b(?!O))|(?P<key>.{1,3}|[\n\r\t])"
@@ -46,9 +50,11 @@ Produces (in order):
 @dataclass
 class Modifiers:
     """Custom modifier flags for key events."""
+
     Ctrl = 0x0001
     Alt = 0x0002
     Shift = 0x0004
+
 
 class Event(Enum):
     """Mouse event types."""
@@ -72,6 +78,7 @@ class Event(Enum):
     SCROLL_DOWN = 65
     """Scroll wheel down."""
 
+
 class Button(Enum):
     """Mouse buttons."""
 
@@ -83,6 +90,7 @@ class Button(Enum):
     """Middle button pressed."""
     RIGHT = 2
     """Right button pressed."""
+
 
 class Mouse:
     """A Event. All information relating to an event of a mouse input."""
@@ -109,7 +117,7 @@ class Mouse:
                 data, event = match.groups()
 
                 # Split data into tuple. First value is the type of mouse event
-                # then the other values are information for that event. 
+                # then the other values are information for that event.
                 data = data.split(";")
                 if (button := int(data[0])) in [0, 1, 2]:
                     if event == "M":
@@ -128,9 +136,7 @@ class Mouse:
                     self.pos = (int(data[1]), int(data[2]))
                 elif (drag := int(data[0])) in [32, 33, 34]:
                     event = Event(drag)
-                    self.events.update(
-                        {Event.DRAG.name: Event.DRAG, event.name: event}
-                    )
+                    self.events.update({Event.DRAG.name: Event.DRAG, event.name: event})
                     if len(data[1:]) < 2:
                         raise ValueError(f"Invalid mouse move sequence: {code}")
                     self.pos = (int(data[1]), int(data[2]))
@@ -168,7 +174,9 @@ class Mouse:
         return symbol
 
     def __eprint__(self):
-        events = f"{{{', '.join([self.__event_to_str__(e) for e in self.events.values()])}}}"
+        events = (
+            f"{{{', '.join([self.__event_to_str__(e) for e in self.events.values()])}}}"
+        )
         position = f" {self.pos}" if self.pos[0] > 0 else ""
         return f"{events}{position}"
 
@@ -195,8 +203,9 @@ class Key:
         # sequence, data, event, key
         sequence, data, _, esc, key = parts[-1]
         key = key or esc
-        if key != "":
-            if (k := keys.by_code(key)) is not None:
+        if key != "" or sequence != "":
+            k = (k := keys.by_code(key)) or (k := keys.by_code(sequence))
+            if k is not None:
                 mods = k.split("_")
                 if "CTRL" in mods:
                     self.modifiers |= Modifiers.Ctrl
@@ -206,7 +215,7 @@ class Key:
                     self.modifiers |= Modifiers.Shift
                 self.key = mods[-1].lower()
             else:
-                self.key = key
+                self.key = key or sequence
         elif sequence != "" and data != "" and (key := keys.by_code(sequence)):
             mods = key.split("_")
             if "CTRL" in mods:
@@ -217,7 +226,7 @@ class Key:
                 self.modifiers |= Modifiers.Shift
             self.key = mods[-1].lower()
         else:
-            self.key = "unkown"
+            self.key = f"{code!r}"
         # mod, ckey, esc, data, event
 
     def is_ascii(self):

@@ -9,14 +9,12 @@ elif sys.platform == "linux":
 else:
     raise ImportError(f"Unsupported platform: {sys.platform}")
 
-modifier_map = {
-    "ctrl": 0,
-    "alt": 1,
-    "shift": 2
-}
+modifier_map = {"ctrl": 0, "alt": 1, "shift": 2}
+
 
 class KeyCode:
     """Data structure for all the possible keycodes that are supported."""
+
     def __init__(self):
         self._keys = {
             # Arrows
@@ -54,7 +52,6 @@ class KeyCode:
             "CTRL_ALT_SHIFT_DOWN": "\x1b[1;8B",
             "CTRL_ALT_SHIFT_RIGHT": "\x1b[1;8C",
             "CTRL_ALT_SHIFT_LEFT": "\x1b[1;8D",
-
             "BACKSPACE": "\x7f",
             "ESC": "\x1b",
             "END": "\x1b[F",
@@ -67,7 +64,6 @@ class KeyCode:
             "TAB": "\t",
             "ENTER": "\n",
             "RETURN": "\n",
-
             # Ctrl + Key :note: This removes the ability to also bind shift
             "CTRL_BACKSPACE": "\x08",
             "CTRL_SPACE": "\x00",
@@ -153,5 +149,6 @@ class KeyCode:
     def items(self) -> ItemsView[str, str]:
         """List of key name to key code pairs."""
         return self._keys.items()
+
 
 keys = KeyCode()
