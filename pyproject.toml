@@ -30,7 +30,7 @@ click = ["click"]
 [project.scripts]
 
 [tool.ruff]
-ignore = ["ANN101", "ANN002", "ANN204", "ANN202"]
+ignore = ["ANN101", "ANN002", "ANN204", "ANN202", "ANN001"]
 extend-select = [
     'E',
     'F',

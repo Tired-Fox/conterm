@@ -12,7 +12,7 @@ def on_key(event: Key, _) -> bool | None:
 
 def on_mouse(event: Mouse, _) -> bool | None:
     """Handler for mouse events."""
-    if Event.DRAG_MIDDLE_CLICK:
+    if Event.DRAG_MIDDLE_CLICK in event:
         eprint(event)
     elif event.event_of(Event.CLICK, Event.RELEASE) and event.button == Button.RIGHT:
         eprint(event)
