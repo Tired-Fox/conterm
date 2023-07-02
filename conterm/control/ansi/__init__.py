@@ -11,23 +11,25 @@ Supported Platforms:
 """
 
 from __future__ import annotations
+
+import re
+import sys
 from collections.abc import Callable
 from contextlib import contextmanager
-from typing import Generator
 from threading import Thread
-import sys
+from typing import Generator
 
-from .event import Record, Mouse, Key, eprint, Event, Button
+from .event import Button, Event, Key, Mouse, Record, eprint
 from .keys import keys
 
 if sys.platform == "win32":
-    from .win import terminal_setup, terminal_reset, read, read_ready
+    from .win import read, read_ready, terminal_reset, terminal_setup
 elif sys.platform in ["linux", "darwin"]:
-    from .unix import terminal_setup, terminal_reset, read, read_ready
+    from .unix import read, read_ready, terminal_reset, terminal_setup
 else:
     raise ImportError(f"Unsupported platform: {sys.platform}")
 
-__all__= [
+__all__ = [
     "Key",
     "Mouse",
     "Event",
@@ -39,6 +41,9 @@ __all__= [
     "terminal_input",
     "supports_ansi",
 ]
+
+ARROW = re.compile(r"\x1b\[(?:\d;\d)?[ABCD]")
+
 
 @contextmanager
 def terminal_input():
@@ -115,7 +120,15 @@ class InputManager:
             while True:
                 char = input.getch(interupt)
                 if char != "":
-                    yield Record(char)
+                    arrows = list(ARROW.finditer(char))
+                    if len(arrows) > 1:
+                        start = arrows[0].start()
+                        start = char[:start]
+                        for arrow in arrows:
+                            yield Record(start + arrow.group(0))
+                    else:
+                        yield Record(char)
+
 
 def _void_(*_):
     pass
@@ -126,11 +139,11 @@ class Listener(Thread):
 
     def __init__(
         self,
-        on_key: Callable[[Key, dict],bool|None] =_void_,
-        on_mouse: Callable[[Mouse, dict],bool|None]=_void_,
+        on_key: Callable[[Key, dict], bool | None] = _void_,
+        on_mouse: Callable[[Mouse, dict], bool | None] = _void_,
         interupt: bool = True,
         *,
-        state: dict|None = None,
+        state: dict | None = None,
         surpress: bool = False,
     ):
         self._on_key_ = on_key
@@ -173,6 +186,7 @@ class Listener(Thread):
         if self.exc is not None:
             raise self.exc
 
+
 def supports_ansi() -> bool:
     """Check if the current terminal supports ansi sequences."""
 
@@ -185,6 +199,7 @@ def supports_ansi() -> bool:
         char += read(1)
         while read_ready(sys.stdin):
             char += read(1)
-    finally: pass
+    finally:
+        pass
 
     return char != "" and char.startswith("\x1b[") and char.endswith("R")

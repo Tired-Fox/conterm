@@ -8,13 +8,13 @@ import re
 from dataclasses import dataclass
 from enum import Enum
 from functools import cache
-from typing import Literal, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from .keys import keys
 
 
 @cache
-def _build_chord_(modifiers: int, key: str):
+def _build_chord_(modifiers: int, key: str) -> str:
     """Builds string chord from key event data. Caches results
     for prolonged keyboard event captures.
     """
@@ -42,7 +42,7 @@ __MOUSE__ = re.compile(r"\[<(.+)([ACBDFHMZmM~])")
 """Regex for mouse event sequences.
 
 Produces (in order):
-    - data 
+    - data
     - event
 """
 
@@ -100,7 +100,7 @@ class Mouse:
     def __init__(
         self,
         code: str = "",
-    ):
+    ) -> None:
         self.modifiers = 0
         # Can have multiple events. Ex: While dragging a user can click a different
         # mouse button. This results in a click event and a drag event.
@@ -173,14 +173,14 @@ class Mouse:
 
         return symbol
 
-    def __eprint__(self):
+    def __eprint__(self) -> str:
         events = (
             f"{{{', '.join([self.__event_to_str__(e) for e in self.events.values()])}}}"
         )
         position = f" {self.pos}" if self.pos[0] > 0 else ""
         return f"{events}{position}"
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<Mouse: {self.code!r}>"
 
 
@@ -191,7 +191,7 @@ class Key:
     def __init__(
         self,
         code: str = "",
-    ):
+    ) -> None:
         self.modifiers = 0
         self.key = ""
         self.code = code
@@ -229,7 +229,7 @@ class Key:
             self.key = f"{code!r}"
         # mod, ckey, esc, data, event
 
-    def is_ascii(self):
+    def is_ascii(self) -> bool:
         return len(self.key) == 1 and self.key.isascii()
 
     def ctrl(self) -> bool:
@@ -247,17 +247,17 @@ class Key:
     def __eq__(self, __value: object) -> bool:
         if isinstance(__value, str):
             return keys.by_chord(__value) == self.code
-        elif isinstance(__value, Key):
+        if isinstance(__value, Key):
             return __value.code == self.code
         return False
 
-    def __eprint__(self):
+    def __eprint__(self) -> str:
         return f"\x1b[33m{self}\x1b[39m"
 
-    def __str__(self):
+    def __str__(self) -> str:
         return _build_chord_(self.modifiers, self.key)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"KeyEvent({self.code!r}, key={self.key}, {self.modifiers})"
 
 
@@ -271,7 +271,7 @@ class Record:
 
     __slots__ = ("type", "key", "mouse")
 
-    def __init__(self, code: str):
+    def __init__(self, code: str) -> None:
         self.type: Literal["KEY", "MOUSE"] = "KEY"
         self.key = None
         self.mouse = None
@@ -302,7 +302,7 @@ class EPrint(Protocol):
         ...
 
 
-def eprint(event: EPrint):
+def eprint(event: EPrint) -> None:
     """Pretty print an input event to stdout."""
     if not isinstance(event, EPrint):
         raise TypeError(f"{event.__class__} does not implement __eprint__")

@@ -1,5 +1,6 @@
-from conterm.control import Key, Mouse, Event, Button, Listener, eprint, keys
+from conterm.control import Button, Event, Key, Listener, Mouse, eprint, keys
 from conterm.control.ansi.actions import set_title
+
 
 def on_key(event: Key, _) -> bool | None:
     """Handler for key events."""
@@ -8,15 +9,14 @@ def on_key(event: Key, _) -> bool | None:
             return False
     eprint(event)
 
+
 def on_mouse(event: Mouse, _) -> bool | None:
     """Handler for mouse events."""
     if Event.DRAG_MIDDLE_CLICK:
         eprint(event)
-    elif (
-        event.event_of(Event.CLICK, Event.RELEASE)
-        and event.button == Button.RIGHT
-    ):
+    elif event.event_of(Event.CLICK, Event.RELEASE) and event.button == Button.RIGHT:
         eprint(event)
+
 
 if __name__ == "__main__":
     set_title("Controls Example")

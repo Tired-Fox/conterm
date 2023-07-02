@@ -8,27 +8,18 @@ version = "0.0.1"
 description = "Simple library built around making terminal interaction easy."
 readme = "README.md"
 license = "MIT"
-authors = [
-    { name="Tired Fox", email="zboehm104@gmail.com"}
-]
+authors = [{ name = "Tired Fox", email = "zboehm104@gmail.com" }]
 classifiers = [
-  "Programming Language :: Python :: 3",
-  "License :: OSI Approved :: MIT License",
-  "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
 ]
 requires-python = ">=3.8"
 dependencies = []
 
 [project.optional-dependencies]
-tests = [
-  "pytest",
-  "pytest-cov"
-]
-dev = [
-  "black",
-  "ruff",
-  "requests"
-]
+tests = ["pytest", "pytest-cov"]
+dev = ["black", "ruff", "requests"]
 # This is if you want to use the run wrapper to manually run click cli with custom args
 click = ["click"]
 
@@ -39,9 +30,7 @@ click = ["click"]
 [project.scripts]
 
 [tool.ruff]
-ignore = [
-  "ANN101"
-]
+ignore = ["ANN101", "ANN002", "ANN204", "ANN202"]
 extend-select = [
     'E',
     'F',
@@ -62,5 +51,5 @@ extend-select = [
     "TCH",
     "PTH",
     "PLE",
-    "RUF"
+    "RUF",
 ]
