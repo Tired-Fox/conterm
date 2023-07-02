@@ -23,11 +23,11 @@ def _build_chord_(modifiers: int, key: str) -> str:
     shift = "shift+" if modifiers & Modifiers.Shift and len(key) > 1 else ""
     if key in keys:
         return f"{ctrl}{alt}{shift}{keys.by_code(key)}"
-    return f"{ctrl}{alt}{shift}{key}"
+    return f"{ctrl}{alt}{shift}{key if key.isascii() else 'unkown'}"
 
 
 __ANSI__ = re.compile(
-    r"(?P<sequence>\x1b\[(?P<data>(?:\d{1,3};?)*)(?P<event>[ACBDmMZFHPQRS~]{1,2})?)|(\x1b(?!O))|(?P<key>.{1,3}|[\n\r\t])"
+    r"(?P<sequence>\x1b\[(?P<data>(?:\d{1,3};?)*)(?P<event>[ACBDmMZFHPQRS~]{1,2})?)t?|(\x1b(?!O))|(?P<key>.{1,3}|[\n\r\t])"
 )
 """Regex for key event sequences.
 
