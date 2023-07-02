@@ -32,6 +32,11 @@ class KeyCode:
             "ALT_DOWN": "\x1b[1;3B",
             "ALT_RIGHT": "\x1b[1;3C",
             "ALT_LEFT": "\x1b[1;3D",
+            # Alt + Arrows
+            "CTRL_UP": "\x1b[1;5A",
+            "CTRL_DOWN": "\x1b[1;5B",
+            "CTRL_RIGHT": "\x1b[1;5C",
+            "CTRL_LEFT": "\x1b[1;5D",
             # Ctrl + Alt + Arrows
             "CTRL_ALT_UP": "\x1b[1;7A",
             "CTRL_ALT_DOWN": "\x1b[1;7B",
@@ -122,19 +127,18 @@ class KeyCode:
         name = "_".join(parts).upper()
         if (key := self._keys.get(name)) is not None:
             return key
-        else:
-            ctrl = "ctrl" in chord.lower()
-            alt = "\x1b" if "alt" in chord.lower() else ""
-            shift = "shift" in chord.lower()
-            key = parts[-1].upper() if shift else parts[-1]
 
-            if ctrl:
-                if (key := self._keys.get(f"CTRL_{key.upper()}")) is not None:
-                    return f"{alt}{key}"
-            elif key == " ":
-                return " "
-            elif key.isalpha():
-                return f"{alt}{key}"
+        ctrl = "ctrl" in chord.lower()
+        alt = "\x1b" if "alt" in chord.lower() else ""
+        shift = "shift" in chord.lower()
+        key = parts[-1].upper() if shift else parts[-1]
+
+        if ctrl and (key := self._keys.get(f"CTRL_{key.upper()}")) is not None:
+            return f"{alt}{key}"
+        if key == " ":
+            return " "
+        if key.isalpha():
+            return f"{alt}{key}"
 
         return default
 
