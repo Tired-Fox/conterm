@@ -7,19 +7,20 @@ if __name__ == "__main__":
     set_title("Markup Example")
 
     Markup.print(f"""\
-[b]System Colors:[/b]
+[b ^full]System Colors:[/b /^]
 {system_colors()}
 
-[b]Xterm Colors:[/b]
+[b ^full]Xterm Colors:[/b /^]
 {xterm_colors()}
 
-[b]RGB/Hex Colors:[/b]
+[b ^full]RGB/Hex Colors:[/b /^]
 {rgb_colors()}
 
-[b]Formatting:[/b] [i]italic[/i] [b]bold[/b] [u]underline[/u] [s]strikethrough[/s] \
+[b ^full]Formatting:[/b /^]
+[i ^full]italic[/i] [b]bold[/b] [u]underline[/u] [s]strikethrough[/s] \
 [bl]blink[/bl] [r]reversed[/r] [~https://example.com]url[/]
 
-[b]Alignment:[/b]
+[b ^full]Alignment:[/b /^]
     [i]- <,^,> specifies alignment. Must include width for it to align[/i]
         [<16 red]Left[/]|[^16 green]centered[/]|[>16 blue]Right[/]
 

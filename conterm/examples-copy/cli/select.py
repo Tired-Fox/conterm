@@ -26,6 +26,7 @@ from conterm.control.ansi.actions import set_title
 
 if __name__ == "__main__":
     set_title("Select Example")
+    print("This example has multiple paths. Feel free to run it multiple times.\n\n")
 
     name = prompt("password:", password=True)
     preset = ""

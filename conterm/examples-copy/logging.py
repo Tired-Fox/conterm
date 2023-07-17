@@ -9,14 +9,15 @@ from pathlib import Path
 if __name__ == "__main__":
     set_title("Logging Example")
 
-    log("\x1b[1mSome message\x1b[22m")
+    log("\x1b[1mDefault formatted message\x1b[22m")
     sleep(0.2)
 
-    with Path(__file__).parent.joinpath("temp.txt").open("+w") as file:
-        log("\x1b[1mSome message\x1b[22m", out=file)
+    # This is the format to use to write to a file
+    # with Path(__file__).parent.joinpath("temp.txt").open("+w") as file:
+    #     log("\x1b[1mSome message\x1b[22m", out=file)
 
     sleep(0.2)
-    log("\x1b[1mSome message\x1b[22m", level=LogLevel.Warn, dt_fmt="%I:%M:%S")
+    log("\x1b[1mCustom date time format\x1b[22m", level=LogLevel.Warn, dt_fmt="%I:%M:%S")
 
     logger = Logger(
         # Custom format
@@ -39,14 +40,14 @@ if __name__ == "__main__":
     )
 
     # This log method is thread safe and can be called from anywhere
-    logger.log("one")
+    logger.log("Custom message format")
 
     sleep(0.5)
-    logger.log("two", level=LogLevel.Warn)
+    logger.log("Custom message format, only warnings and up", level=LogLevel.Warn)
 
     sleep(0.5)
-    logger.log("three", level=LogLevel.Error)
+    logger.log("Error log event", level=LogLevel.Error)
 
     # Custom log event
-    logger.log("Not Found", level=404)
+    logger.log("Custom log level", level=404)
 

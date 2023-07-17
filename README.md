@@ -40,6 +40,33 @@ features in action.
 
 > note: This library is experimental and a work in progress. Any and all feedback is welcome.
 
+### Markup
+
+This should be an easy to use familiar syntax. `b`, `i`, `u`, `s` equal bold, italic, underline and strikethrough respectively. `~<url>` represents a hyperlink. `<`, `^`, `>` represent left, center and right align respectively as long as a total width is also provided. Additionally, conterm allows the user to define their own macros that can either generate text or modify text. The custom macros are called outright like builtin macros which allows for macro overloading. There can be multiple macros per block seperated by a space and each macro is persistant until they are closed with a `/`. All system colors are supported by name. There is also hex, xterm, and rgb support. By default the color is for the foreground, but if it is prefixed with `@` it will be applied to the background.
+
+**Examples**
+
+```
+[b i]Bold italic[/b] just italic [/i] normal text
+```
+```
+[u s]Underlined and strikethrough[/] normal text
+```
+```
+[^30]30 char center aligned[<70%]Closes previous alignment and starts this one
+[^full]Can use percentages and full keyword; full == 100%
+```
+```
+[~http://example.com]Example Url [~http://example.com]Another url[/~]
+```
+```
+[red]Red text [@white] now with white background[/fg /bg]
+
+[#f32]Red text [@243] grey background[/]
+
+[100,15,100]RGB colored text[/]
+```
+
 <!-- Footer Badges --!>
 
 <br>

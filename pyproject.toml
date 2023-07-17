@@ -28,6 +28,7 @@ click = ["click"]
 # "Website" = "https://tired-fox.github.io/conterm/"
 
 [project.scripts]
+conterm = "conterm.__main__:cli"
 
 [tool.ruff]
 ignore = ["ANN101", "ANN002", "ANN204", "ANN202", "ANN001"]
