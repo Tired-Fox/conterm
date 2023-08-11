@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass
 from enum import Enum
 from functools import cache
-from typing import Any, Literal, Protocol, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
 
 from .keys import keys
 
@@ -91,6 +91,29 @@ class Button(Enum):
     RIGHT = 2
     """Right button pressed."""
 
+    def __eq__(self, __value: object) -> bool:
+        if isinstance(__value, Button):
+            return __value.value == self.value
+        elif isinstance(__value, str):
+            return self in [MouseButtonShort[v.upper()] for v in __value.split(":")]
+        return False
+
+class MouseEventShort(Enum):
+    M = Event.MOVE
+    D = Event.DRAG
+    DL = Event.DRAG_LEFT_CLICK
+    DM = Event.DRAG_MIDDLE_CLICK
+    DR = Event.DRAG_RIGHT_CLICK
+    SU = Event.SCROLL_UP
+    SD = Event.SCROLL_DOWN
+    R = Event.RELEASE
+    C = Event.CLICK
+
+class MouseButtonShort(Enum):
+    L = Button.LEFT
+    M = Button.MIDDLE
+    R = Button.RIGHT
+    E = Button.EMPTY
 
 class Mouse:
     """A Event. All information relating to an event of a mouse input."""
@@ -139,7 +162,9 @@ class Mouse:
                     self.events.update({Event.DRAG.name: Event.DRAG, event.name: event})
                     if len(data[1:]) < 2:
                         raise ValueError(f"Invalid mouse move sequence: {code}")
-                    self.pos = (int(data[1]), int(data[2]))
+                    try:
+                        self.pos = (int(data[1]), int(data[2]))
+                    except Exception: pass
 
     def event_of(self, *events: Event) -> bool:
         """Check if the mouse event is one of the given mouse events."""
@@ -151,13 +176,23 @@ class Mouse:
             return key.name in self.events
         return False
 
-    def __eq__(self, __value: object) -> bool:
+    def __eq__(self, __value: object | str) -> bool:
         if isinstance(__value, Mouse):
             return (
                 __value.events == self.events
                 and __value.pos == self.pos
                 and __value.button == self.button
             )
+        elif isinstance(__value, str):
+            len(
+                list(
+                    filter(
+                        lambda x: x in self.events,
+                        [MouseEventShort[v.upper()] for v in __value.split(":")]
+                    )
+                )
+            )
+
         return False
 
     def __event_to_str__(self, event: Event) -> str:
@@ -166,9 +201,9 @@ class Mouse:
         if self.event_of(Event.CLICK, Event.RELEASE):
             symbol = self.button.name
 
-        if Event.CLICK in self.events:
+        if Event.CLICK.name in self.events:
             symbol = f"\x1b[32m{symbol}\x1b[39m"
-        elif Event.RELEASE in self.events:
+        elif Event.RELEASE.name in self.events:
             symbol = f"\x1b[31m{symbol}\x1b[39m"
 
         return symbol
