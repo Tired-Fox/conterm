@@ -1,4 +1,4 @@
-from conterm.control.ansi.actions import set_title
+from conterm.control.actions import set_title
 from conterm.pretty import Markup
 from conterm.pretty.markup.preview import rgb_colors, system_colors, xterm_colors
 

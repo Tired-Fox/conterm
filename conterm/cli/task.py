@@ -1,15 +1,15 @@
 from __future__ import annotations
+from os import get_terminal_size
 
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from queue import Queue
-from sys import stderr
 from threading import Event, Lock, Thread
 from time import sleep
 from typing import Literal
 
-from conterm.control.ansi.actions import move_to, pos
+from conterm.control.actions import move_to, pos, up
 
 __all__ = ["Icons", "TaskManager", "Spinner", "Progress", "Task"]
 
@@ -68,12 +68,15 @@ def fileno(file_or_fd):
 
 class TaskManager(Thread):
     def __init__(self, *tasks: Task, clear: bool = False) -> None:
+        # Prep the terminal. If starting at bottom of buffer placement depends on scrolling
+        (self._cols_, self._lines_) = get_terminal_size()
+
         super().__init__(daemon=True)
         self.__tasks__ = list(tasks)
         self.__lock__ = Lock()
         self.__stop__ = Event()
         self._rate_ = 0.1
-        _, self._line_ = pos()
+        _, self._y_ = pos()
         self.exc = None
         self.clear = clear
 
@@ -89,15 +92,34 @@ class TaskManager(Thread):
 
                 while sys.stdout.messages.qsize() > 0:
                     self.messages.append(sys.stdout.messages.get())
-                move_to(0, self._line_)
+
                 # Got to first line of manager then overwrite
+                move_to(0, self._y_)
+
+                y = 1
                 self._out_.write("\n")
+
                 for task in self.__tasks__:
                     task.update(self._rate_)
+                    t = str(task)
+                    y += t.count("\n")
+                    y += max((len(t) // self._cols_) - 1, 0)
+                    y += 1
                     self._out_.write(f"{task}\n")
+
                 if len(self.messages) > 0:
                     messages = "".join(self.messages)
-                    self._out_.write(f"\x1b[1m[stdout]\x1b[22m\n{messages}")
+                    self._out_.write("\x1b[1m[stdout]\x1b[22m\n")
+                    self._out_.write(messages)
+                    y += messages.count("\n") + 1
+                    for line in messages.split("\n"):
+                        y += max((len(line) // self._cols_) - 1, 0)
+
+                # Track how many lines are printed and if the buffers scrolls then
+                # move the jump y position up by the difference
+                if self._y_ + y > self._lines_:
+                    self._y_ = max(self._y_ - ((self._y_ + y) - self._lines_), 0)
+
                 self._out_.flush()
                 self.__lock__.release()
                 sleep(self._rate_)
@@ -143,7 +165,7 @@ class TaskManager(Thread):
         Thread.join(self)
 
         # Print final state of tasks
-        move_to(0, self._line_)
+        move_to(0, self._y_)
         # Got to first line of manager then overwrite
         self._out_.write("\n")
         for task in self.__tasks__:

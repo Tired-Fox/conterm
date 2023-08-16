@@ -6,7 +6,7 @@ from time import sleep
 from conterm.cli import *
 import random
 
-from conterm.control.ansi.actions import set_title
+from conterm.control.actions import set_title
 
 FILE_COUNT = {
     "basic": 5,

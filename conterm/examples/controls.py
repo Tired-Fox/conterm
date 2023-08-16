@@ -1,5 +1,5 @@
 from conterm.control import Event, Key, Listener, Mouse, eprint
-from conterm.control.ansi.actions import set_title
+from conterm.control.actions import set_title
 
 
 def on_key(event: Key, _) -> bool | None:

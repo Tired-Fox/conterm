@@ -1,4 +1,4 @@
-from conterm.control.ansi.actions import set_title
+from conterm.control.actions import set_title
 from conterm.pretty import pprint
 from conterm.pretty.themes import DRACULA, GRUVBOX, NORD, Catpuccin
 

@@ -12,7 +12,7 @@ from threading import Thread
 from time import sleep
 
 from conterm.cli import Icons, Progress, Spinner, TaskManager
-from conterm.control.ansi.actions import set_title
+from conterm.control.actions import set_title
 
 
 def increment(progress: Progress, duration: float):

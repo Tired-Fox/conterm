@@ -2,8 +2,8 @@ from __future__ import annotations
 from os import get_terminal_size
 from sys import stdout
 from typing import Any, Callable, Iterable, Literal, overload
-from conterm.control.ansi.actions import del_line, erase_display, move_to, pos, up
-from conterm.control.ansi import Key, Listener
+from conterm.control.actions import erase_display, move_to, pos
+from conterm.control import Key, Listener
 
 from conterm.pretty.markup import Markup
 

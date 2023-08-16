@@ -1,7 +1,7 @@
 """Logging Example"""
 
 from time import sleep
-from conterm.control.ansi.actions import set_title
+from conterm.control.actions import set_title
 from conterm.logging import LogLevel, Logger, log
 from pathlib import Path
 
