@@ -59,11 +59,18 @@ class Markup:
         self._stash_stack_.pop(index)
         return self._stash_.pop(key)
 
-    def feed(self, markup: str, *, sep: str = ""):
+    def feed(self, markup: str, *, sep: str = "", mar: bool = True):
         """Feed/give the parser more markup to handle.
         The markup is added to the current markup and reuslt with a space gap."""
         self.markup += f"{sep}{markup}"
-        self._result_ += f"{sep}{self.__parse__(self.__tokenize__(markup))}"
+        self._result_ += f"{sep}{self.__parse__(self.__tokenize__(markup), mar=mar)}"
+
+    def clear(self):
+        """Clear all markup currently in the parser."""
+        self.markup = ""
+        self._result_ = ""
+        self._stash_.clear()
+        self._stash_stack_.clear()
 
     def __str__(self) -> str:
         return self._result_
@@ -120,7 +127,7 @@ class Markup:
             key=sort_customs
         )
 
-    def __parse__(self, tokens: list[Macro | str], *, close: bool = True) -> str:
+    def __parse__(self, tokens: list[Macro | str], *, close: bool = True, mar: bool) -> str:
         output = ""
         cmacro = Macro()
         previous = "text"
@@ -168,7 +175,9 @@ class Markup:
             output = output[:align[1]] + align[0].apply(output[align[1]:], url=url_open)
 
         if close:
-            output += f"\x1b[0m{Hyperlink.close if url_open is not None else ''}"
+            reset = '\x1b[0m' if mar else ''
+            cl = Hyperlink.close if url_open is not None else ''
+            output += f"{reset}{cl}"
         return output
 
     @staticmethod
@@ -232,16 +241,24 @@ class Markup:
         print(Markup.parse(*markup, customs=customs, sep=sep), end=end, file=file)
 
     @staticmethod
-    def parse(*markup: str, customs: list[Callable|tuple[str,Callable]] | None = None, sep: str = " ") -> str:
-        """Parse in string markup and return the ansi encoded string."""
+    def parse(*markup: str, customs: list[Callable|tuple[str,Callable]] | None = None, sep: str = " ", mar: bool = True) -> str:
+        """Parse in string markup and return the ansi encoded string.
+            
+        Args:
+            *markup (str): Each markup entry to parse.
+            customs (list[Callable|tuple[str, Callable]): List of callbacks to generate custom macros.
+            sep (str): The seperator to use between each entry of `markdown`
+            mar (bool): Markup auto reset (`mar`). If true then every markup entry is closed with a reset
+                ansi sequence, `\\x1b[0m`. 
+            """
         customs = customs or []
 
         if len(markup) > 0:
             parser = Markup(customs=customs)
 
-            parser.feed(markup[0])
+            parser.feed(markup[0], mar=mar)
             for text in markup[1:]:
-                parser.feed(text, sep=sep)
+                parser.feed(text, sep=sep, mar=mar)
 
             return str(parser)
         return ""
