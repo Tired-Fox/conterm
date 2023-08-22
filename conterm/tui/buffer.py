@@ -5,16 +5,17 @@ from typing import overload
 
 from conterm.tui.style import Style
 
-__all__ = [
-    "Buffer"
-]
+__all__ = ["Buffer"]
+
 
 def _write(content: str):
     stdout.write(content)
     stdout.flush()
 
+
 class Pixel:
     """A unicode symbol and it's ansi sequence styling."""
+
     __slots__ = ("symbol", "style")
 
     def __init__(self, symbol: str, style: Style):
@@ -37,6 +38,7 @@ class Pixel:
     def __str__(self) -> str:
         return f"{self.style}{self.symbol}{self.style.reset()}"
 
+
 class Buffer:
     """A terminal buffer that overwrites to a rect of the terminal.
 
@@ -45,9 +47,12 @@ class Buffer:
         height (int | None): The height of the buffer. Defaults to terminal height.
         default (str): The char to use for each pixel by default. Defaults to `''` (empty str)
     """
+
     __slots__ = ("__BUFFER__", "__CACHE__", "_width_", "_height_", "_default_")
 
-    def __init__(self, width: int | None = None, height: int | None = None, default: str = ' ') -> None:
+    def __init__(
+        self, width: int | None = None, height: int | None = None, default: str = " "
+    ) -> None:
         (cols, lines) = get_terminal_size()
 
         self._width_ = width or cols
@@ -55,12 +60,10 @@ class Buffer:
         self._default_ = default
 
         self.__BUFFER__: list[list[Pixel]] = [
-            [
-                Pixel(default, Style()) for _ in range(self._width_)
-            ]
+            [Pixel(default, Style()) for _ in range(self._width_)]
             for _ in range(self._height_)
         ]
-        self.__CACHE__ = [] 
+        self.__CACHE__ = []
 
     @property
     def width(self) -> int:
@@ -85,22 +88,23 @@ class Buffer:
         height = height or self._height_
 
         if height > self._height_:
-            self.__BUFFER__.extend([
-                [Pixel(self._default_, Style()) for _ in range(self._width_)]
-                for _ in range(height - self._height_)
-            ])
+            self.__BUFFER__.extend(
+                [
+                    [Pixel(self._default_, Style()) for _ in range(self._width_)]
+                    for _ in range(height - self._height_)
+                ]
+            )
         elif height < self._height_:
             self.__BUFFER__ = self.__BUFFER__[:height]
 
         if width > self._width_:
             for row in range(len(self.__BUFFER__)):
-                self.__BUFFER__[row].extend([
-                    Pixel(self._default_, Style()) for _ in range(self._width_)
-                ])
+                self.__BUFFER__[row].extend(
+                    [Pixel(self._default_, Style()) for _ in range(self._width_)]
+                )
         elif width < self._width_:
             for row in range(len(self.__BUFFER__)):
                 self.__BUFFER__[row] = self.__BUFFER__[row][:width]
-
 
         self._width_ = width
         self._height_ = height
@@ -132,7 +136,7 @@ class Buffer:
 
         for i, (br, sr) in enumerate(zip(self.__BUFFER__, self.__CACHE__)):
             if len(br) != len(sr):
-                result += ''.join(f"\x1b[{i+1};{j+1}H{p}" for j, p in enumerate(br))
+                result += "".join(f"\x1b[{i+1};{j+1}H{p}" for j, p in enumerate(br))
             else:
                 for j, (bp, sp) in enumerate(zip(br, sr)):
                     if bp != sp:
@@ -143,16 +147,22 @@ class Buffer:
     def write(self, cursor: tuple[int, int] | None = None):
         """Render the buffer and write it to stdout. When finished the current buffer state is cached."""
         bsize = len(self.__BUFFER__)
-        final = f'\x1b[{bsize};{len(self.__BUFFER__[0]) if bsize > 0 else 0}H' if cursor is None else f'\x1b[{cursor[0]};{cursor[1]}H'
+        final = (
+            f"\x1b[{bsize};{len(self.__BUFFER__[0]) if bsize > 0 else 0}H"
+            if cursor is None
+            else f"\x1b[{cursor[0]};{cursor[1]}H"
+        )
         _write(f"{self.render()}{final}\x1b[0m")
         self.cache()
 
     @overload
     def __getitem__(self, key: int) -> list[Pixel]:
         ...
+
     @overload
     def __getitem__(self, key: slice) -> list[list[Pixel]]:
         ...
+
     def __getitem__(self, key: int | slice) -> list[Pixel] | list[list[Pixel]]:
         return self.__BUFFER__[key]
 
