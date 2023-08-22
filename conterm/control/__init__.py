@@ -17,6 +17,7 @@ import sys
 from collections.abc import Callable
 from contextlib import contextmanager
 from threading import Thread
+import threading
 from typing import Generator
 
 from .event import Button, Event, Key, Mouse, Record, eprint
@@ -102,7 +103,7 @@ class InputManager:
             self.data = None
 
     @staticmethod
-    def watch(interupt: bool = True, surpress: bool = False) -> Generator:
+    def watch(interupt: bool = True, surpress: bool = False) -> Generator[Record, None, None]:
         """Get characters until keyboard interupt. Blocks until next char is available.
 
         Args:
@@ -118,17 +119,21 @@ class InputManager:
 
         with InputManager() as input:
             while True:
-                char = input.getch(interupt)
-                if char != "":
-                    arrows = list(ARROW.finditer(char))
-                    if len(arrows) > 1:
-                        start = arrows[0].start()
-                        start = char[:start]
-                        for arrow in arrows:
-                            yield Record(start + arrow.group(0))
-                    else:
-                        yield Record(char)
-
+                try:
+                    char = input.getch(interupt)
+                    if char != "":
+                        arrows = list(ARROW.finditer(char))
+                        if len(arrows) > 1:
+                            start = arrows[0].start()
+                            start = char[:start]
+                            for arrow in arrows:
+                                yield Record(start + arrow.group(0))
+                        else:
+                            yield Record(char)
+                except KeyboardInterrupt as error:
+                    raise error
+                except Exception:
+                    continue
 
 def _void_(*_):
     pass
@@ -141,6 +146,8 @@ class Listener(Thread):
         self,
         on_key: Callable[[Key, dict], bool | None] = _void_,
         on_mouse: Callable[[Mouse, dict], bool | None] = _void_,
+        on_event: Callable[[Record, dict], bool | None] = _void_,
+        on_interrupt: Callable = _void_,
         interupt: bool = True,
         *,
         state: dict | None = None,
@@ -148,9 +155,13 @@ class Listener(Thread):
     ):
         self._on_key_ = on_key
         self._on_mouse_ = on_mouse
+        self._on_event_ = on_event
+        self._on_interrupt_ = on_interrupt
+
         self._interupt_ = interupt
         self._surpress_ = surpress
         self._state_ = state or {}
+        self._stop_ = threading.Event()
         self.exc = None
         # If the program exits in a odd manner then the thread will
         # also exit
@@ -160,23 +171,37 @@ class Listener(Thread):
         self.start()
         return self
 
-    def __exit__(self, etype, evalue, etb):
+    def __exit__(self, _etype, evalue, _etb):
         if evalue is not None:
             raise evalue
 
     def run(self):
         try:
+            # while record := InputManager.watch(self._interupt_, self._surpress_) and not self._stop_:
             for record in InputManager.watch(self._interupt_, self._surpress_):
+                if self._stop_.is_set():
+                    raise KeyboardInterrupt
+
+                result = self._on_event_(record, self._state_)
+                if result is False:
+                    return
+
                 if record == "KEY":
                     result = self._on_key_(record.key, self._state_)
                     if result is False:
                         return
+
                 elif record == "MOUSE":
                     result = self._on_mouse_(record.mouse, self._state_)
                     if result is False:
                         return
         except KeyboardInterrupt as error:
+            self._on_interrupt_()
             self.exc = error
+
+    def stop(self):
+        self._stop_.set()
+        self.join()
 
     def join(self):
         """Force exceptions to be thrown in main thread"""

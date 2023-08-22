@@ -6,10 +6,12 @@ from __future__ import annotations
 
 from copy import deepcopy
 from enum import Enum
-from math import ceil, floor
+from queue import Empty, Full, Queue
 from random import randrange
 from time import sleep
-from typing import Literal, TypedDict, Unpack
+from typing import Any, Callable, Literal, TypeAlias, TypedDict, Unpack
+from conterm.control import Listener
+from conterm.control.event import Event, Key, Mouse, Record
 from conterm.pretty.markup import Markup
 import re
 
@@ -192,6 +194,19 @@ def _norm_sizing(
     else:
         raise ValueError(f"Invalid sizing type; was {type(sizing)}")
 
+class Command(Enum):
+    Quit = -1
+    """Quit the application."""
+    NOOP = 0
+    """No Operation. Do nothing."""
+    Deselect = 1
+    """Deselect the node if posible."""
+    Updated = 2
+    """Updates the nodes. This will re-render the node."""
+    ScrollDown = 3
+    """Scrolls the content of the node down. Also acts an `Updated` command."""
+    ScrollUp = 4
+    """Scrolls the content of the node up. Also acts an `Updated` command."""
 
 class Node:
     def __init__(
@@ -201,12 +216,15 @@ class Node:
         size: tuple[int | float, int | float] = (1.0, 1.0),
         title: str = "",
         style: Style,
+        event_handler: Callable[[Node, Key, Mouse, dict], Command]
     ):
         self.style = style
         self.title = title
         self.size = size
         self.pos = pos
         self.text: Markup = Markup()
+        self.scroll = 0
+        self.event_handler = event_handler
 
     def write(self, *text: str, sep: str = " "):
         """Write a string of text to the node.
@@ -223,6 +241,16 @@ class Node:
             self.text.feed(text[0], mar=True)
             for t in text[1:]:
                 self.text.feed(t, sep=sep, mar=True)
+
+    def handler(self, record: Record, state: dict):
+        val = self.event_handler(self, record.key, record.mouse, state)
+        try:
+            state['event_queue'].put((val, self), block=False)
+            if val == Command.Quit:
+                # Stop key event listener
+                return False
+        except Full: pass
+        return True
 
     def format(self, *text: str, sep: str = " "):
         """Adding a formatted string of text to the node.
@@ -257,6 +285,12 @@ class Node:
     def clear(self):
         """Clear the nodes text."""
         self.text.clear()
+
+    def scroll_up(self):
+        self.scroll -= 1
+
+    def scroll_down(self):
+        self.scroll += 1
 
     def _border_(self, buffer: Buffer):
         """Generate the nodes border pixels."""
@@ -396,6 +430,17 @@ class Node:
             lines = self._align_(lines, rect.height, [], self.style.align_items)
         return lines
 
+    def _scroll_(self, text: list[list[Pixel]], rect: Rect, buffer: Buffer) -> list[list[Pixel]]:
+        if len(text) > rect.height:
+            buffer[rect.bottom-1][rect.right].set('⮟')
+            buffer[rect.top][rect.right].set('⮝')
+
+        maxv = len(text) - rect.height - 1
+        self.scroll = max(0, min(self.scroll, maxv))
+        # total = scroll // maxv
+        
+        return text[self.scroll:]
+
     def _text_(self, buffer: Buffer):
         rect = self.valid_rect(buffer)
         (pl, pt, pr, pb) = _norm_sizing(self.style.padding)
@@ -411,10 +456,15 @@ class Node:
 
         text = self._to_pixels_()
         text = self._normalize_pixels_(text, rect)
+        text = self._scroll_(text, rect, buffer)
 
-        for line, row in zip(text, buffer[rect.top : rect.bottom]):
-            for char, pixel in zip(line, row[rect.left : rect.right]):
-                pixel.set(char.symbol, char.style)
+        for i, row in enumerate(buffer[rect.top : rect.bottom]):
+            line = text[i] if i < len(text) else None
+            for j, pixel in enumerate(row[rect.left : rect.right]):
+                pixel.set(' ')
+                if line != None and j < len(line):
+                    char = line[j]
+                    pixel.set(char.symbol, char.style)
 
     def render(self, buffer: Buffer):
         # 0, 0, w, h
@@ -515,11 +565,69 @@ def __multiple__():
         node.render(buffer)
     buffer.write()
 
+def __scrolling__():
+    """
+        Select -> Use nodes handler
+        Deselect -> Go to parents handlers if not None 
+    """
+    def handler(node: Node, key: Key | None, *_):
+        if key == "j" or key == "down":
+            node.title = "down"
+            return Command.ScrollDown
+        elif key == "k" or key == "up":
+            node.title = "up"
+            return Command.ScrollUp
+        elif key == "q" or key == "Q":
+            return Command.Quit
+        return Command.NOOP
+
+    buffer = Buffer()
+    style = Style(
+        border=True
+    )
+    node = Node(size=(.5, 10), style=style, title="Scrolling Node", event_handler=handler)
+    for i in range(20):
+        node.write(f"{i}: Sample text\n")
+
+    # Global event bus
+    event_queue = Queue()
+    event_queue.put((Command.Updated, Node))
+
+    listener = Listener(
+        on_event=node.handler,
+        on_interrupt=lambda: event_queue.put((Command.Quit, None), block=False),
+        state={"event_queue": event_queue}
+    )
+
+    listener.start()
+    
+    with open("log.txt", "+w", encoding="utf-8") as file:
+        while True:
+            try:
+                data = event_queue.get(block=False)
+                file.write(f"{data}\n") 
+                command, _node = data
+                if command == Command.Updated:
+                    node.render(buffer)
+                    buffer.write()
+                elif command == Command.ScrollUp:
+                    _node.scroll_up()
+                    event_queue.put((Command.Updated, _node), block=False)
+                elif command == Command.ScrollDown:
+                    _node.scroll_down()
+                    event_queue.put((Command.Updated, _node), block=False)
+                elif command == Command.Quit:
+                    # Terminal reset codes goes here
+                    listener.join()
+                    return
+            except Empty:
+                pass
 
 if __name__ == "__main__":
-    __over_time__()
-    input()
-    __standard__()
-    input()
-    __multiple__()
-    input()
+    # __over_time__()
+    # input()
+    # __standard__()
+    # input()
+    # __multiple__()
+    # input()
+    __scrolling__()
