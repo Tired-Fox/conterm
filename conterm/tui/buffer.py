@@ -20,7 +20,7 @@ class Pixel:
 
     def __init__(self, symbol: str, style: Style):
         self.symbol = symbol
-        self.style = style
+        self.style = deepcopy(style)
 
     def set(self, symbol: str, style: Style | None = None):
         self.symbol = symbol
@@ -176,7 +176,7 @@ class Buffer:
         if len(self.__BUFFER__) > 0:
             result = "".join(str(p) for p in self.__BUFFER__[0])
             for row in self.__BUFFER__[1:]:
-                result += f"\n{''.join(str(p) for p in row)}"
+                result += f"\n{''.join(p.symbol for p in row)}"
             return result
         return ""
 
