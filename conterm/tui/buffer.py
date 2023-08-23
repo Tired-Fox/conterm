@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 from copy import deepcopy
 from sys import stdout
 from os import get_terminal_size
-from typing import overload
+from typing import Generator, overload
 
 from conterm.tui.style import Style
 
@@ -36,7 +38,7 @@ class Pixel:
         return repr(f"{self.style}{self.symbol}")
 
     def __str__(self) -> str:
-        return f"{self.style}{self.symbol}{self.style.reset()}"
+        return f"{self.style}{self.symbol}\x1b[0m"
 
 
 class Buffer:
@@ -155,6 +157,22 @@ class Buffer:
         _write(f"{self.render()}{final}\x1b[0m")
         self.cache()
 
+    def sub(self, x: int, y: int, w: int, h: int) -> Buffer:
+        x = max(0, min(x, self.width))
+        y = max(0, min(y, self.height))
+        w = max(0, min(w, self.width - x))
+        h = max(0, min(h, self.height - y))
+
+        buffer = Buffer()
+        buffer._default_ = self._default_
+        buffer.__BUFFER__ = [
+            [self.__BUFFER__[r][p] for p in range(x, x+w)]
+            for r in range(y, y+h)
+        ]
+        buffer._width_ = w
+        buffer._height_ = h
+        return buffer
+
     @overload
     def __getitem__(self, key: int) -> list[Pixel]:
         ...
@@ -165,6 +183,9 @@ class Buffer:
 
     def __getitem__(self, key: int | slice) -> list[Pixel] | list[list[Pixel]]:
         return self.__BUFFER__[key]
+
+    def __iter__(self) -> Generator[list[Pixel], None, None]:
+        yield from self.__BUFFER__
 
     def __len__(self) -> int:
         return len(self.__BUFFER__)

@@ -3,13 +3,16 @@ Mini module for creating tui applications. This library is fairly simple.
 If more complex features are desired please see other Tui libraries.
 """
 from __future__ import annotations
+from abc import abstractmethod
 
 from copy import deepcopy
 from enum import Enum
+from math import floor
 from queue import Empty, Full, Queue
 from random import randrange
-from time import sleep
-from typing import Callable, Iterable, Literal, TypedDict, Unpack
+import threading
+from time import sleep, time
+from typing import Any, Callable, Iterable, Literal, Protocol, TypedDict, Unpack, overload, runtime_checkable
 from conterm.control import Listener
 from conterm.control.event import Record
 from conterm.pretty.markup import Markup
@@ -21,55 +24,108 @@ from conterm.tui.style import S, ColorFormat, Style as _AnsiStyle, Color
 def clamp(value: int, lower, upper) -> int:
     return max(lower, min(value, upper))
 
-def default_handler(context: Context, node: Node, event: Record, _state: dict):
+def default_handler(*_):
+    return
+
+def scroll_node(context: TreeNode, event: Record):
     if event.type == "KEY":
         if event.key == "j" or event.key == "down":
-            return (Command.ScrollDown, context)
+            context.scroll("down")
+            context.event(Command.Updated, context)
         elif event.key == "k" or event.key == "up":
-            return (Command.ScrollUp, context)
+            context.scroll("up")
+            context.event(Command.Updated, context)
         if event.key == "h" or event.key == "left":
-            return (Command.ScrollLeft, context)
+            context.scroll("left")
+            context.event(Command.Updated, context)
         elif event.key == "l" or event.key == "right":
-            return (Command.ScrollRight, context)
+            context.scroll("right")
+            context.event(Command.Updated, context)
+
+class Updater(threading.Thread):
+    def __init__(self, app: Application, *args, **kwargs):
+        self._stop_ = threading.Event()
+        self.update = app._update_
+        self.app = app
+        self.state = AppState(app)
+        super().__init__(name="python_update_loop", daemon=True)
+
+    def run(self) -> None:
+        last_time = time()
+        while True:
+            try:
+                command, context = self.app.event_bus.get(block=False)
+                if command == Command.Updated:
+                    context.render()
+                    self.app.buffer.write()
+                elif command == Command.Select:
+                    for focusable in self.app.focusable:
+                        focusable.focus('normal')
+                    self._CURRENT_ = self.app.focusable[self.app.focused]
+                    self._CURRENT_.focus('selected')
+                    self.app.render()
+                elif command == Command.Deselect:
+                    # PERF: Make this part parent object so it works with nesting
+                    for focusable in self.app.focusable:
+                        focusable.focus('unfocus')
+                    self._CURRENT_ = None
+                    self.app.focusable[self.app.focused].focus('focus')
+                    self.app.render()
+                elif command == Command.Quit:
+                    # Terminal reset codes goes here
+                    return
+            except Empty:
+                pass
+
+            if self.update is not None:
+                self.update(time() - last_time, self.state)
+                last_time = time()
+        # last_time = time()
+        # while not self._stop_.is_set():
+        #     if (ct := time() - last_time) >= 1/60:
+        #         self.update(ct, self.app)
+        #         last_time = time()
+    
+    def stop(self):
+        self._stop_.set()
+        self.join()
 
 class ApplicationBuilder:
     def __init__(self, app: Application) -> None:
         self._application_ = app
 
-    def new(
-        self,
-        pos: tuple[int | float, int | float] | None = None,
-        size: tuple[int | float, int | float] | None = None,
-        title: str | None = None,
-        style: Style | None = None,
-        event_handler: EventHandler | None = None,
-        state: dict | None = None,
-    ) -> Context:
-        params = {
-            'pos': pos,
-            'size': size,
-            'title': title,
-            'style': style,
-            'event_handler': event_handler,
-            'state': state
-        }
-        params = {key: value for key, value in params.items() if value is not None}
-        self._application_._CHILDREN_.append(Context(Node(**params)))
-        return self._application_._CHILDREN_[-1]
+    def context(self, *_, **kwargs: Unpack[NodeArgs]) -> Context:
+        new = Context(Node(**kwargs))
+        new.set_buffer(self._application_.buffer)
+        self._application_._CHILDREN_.append(new)
+        new._PARENT_ = self._application_
+        return new
 
-    def add(self, node: Node):
-        self._application_._CHILDREN_.append(Context(node))
+    def section(self, *_, pos=(0, 0), size=(1.0, 1.0), padding: SizeType = 0) -> Section:
+        new = Section(pos=pos, size=size, padding=padding)
+        new.set_buffer(self._application_.buffer)
+        self._application_._CHILDREN_.append(new)
+        new._PARENT_ = self._application_
+        return new
 
     def extend(self, nodes: Iterable[Node]):
+        start = len(self._application_._CHILDREN_)
         self._application_._CHILDREN_.extend(Context(node) for node in nodes)
+        for child in self._application_._CHILDREN_[start:]:
+            child._PARENT_ = self._application_
 
-    def set_current(self, new: Context | ContextBuilder) -> Context | None:
+    def set_update(self, new: Callable[[int], int] | None):
+        self._application_._update_ = new
+
+    def set_current(self, new: Context | ContextBuilder | Section | SectionBuilder) -> Context | None:
         if isinstance(new, ContextBuilder):
             self._application_.set_current(new._context_)
+        elif isinstance(new, SectionBuilder):
+            self._application_.set_current(new._section_)
         else:
             self._application_.set_current(new)
 
-def default_global_handler(context, node, record: Record, state: dict) -> tuple:
+def default_global_handler(context: TreeNode, record: Record) -> tuple:
     if record.type == "KEY":
         key = record.key
         if key == "q" or key == "Q":
@@ -79,15 +135,31 @@ def default_global_handler(context, node, record: Record, state: dict) -> tuple:
     return (Command.NOOP, None)
 
 class Application:
-    _CHILDREN_: list[Context]
-    _CURRENT_: Context | None
+    _CHILDREN_: list[TreeNode]
+    _CURRENT_: TreeNode | None
 
-    def __init__(self, global_handler: EventHandler = default_global_handler, *children: Context) -> None:
+    def __init__(
+        self, 
+        *children: Context,
+        update: Callable[[float, AppState], None] | None = None,
+        global_handler: EventHandler = default_global_handler,
+    ) -> None:
         self.event_bus = Queue()
         self.buffer = Buffer()
         self._CHILDREN_ = list(children)
-        self._CURRENT_ = self._CHILDREN_[0] if len(self._CHILDREN_) > 0 else None
+        for child in self._CHILDREN_:
+            child._PARENT_ = self
+        self._CURRENT_ = None 
         self._global_handler_ = global_handler
+        self.focused = 0
+        self.focusable = []
+        self.input_watcher = Listener(
+            on_event=self.handler,
+            on_interrupt=lambda: self.event_bus.put((Command.Quit, None), block=False),
+        )
+        self._update_ = update
+        self.updater = Updater(self)
+        self._quit_ = False
 
     def __enter__(self) -> ApplicationBuilder:
         return ApplicationBuilder(self)
@@ -96,70 +168,51 @@ class Application:
         if ev is None:
             self.run()
         else:
+            self.input_watcher.stop()
+            self.updater.stop()
             raise ev
 
     @property
-    def current(self) -> Context | None:
+    def current(self) -> TreeNode | None:
         return self._CURRENT_
 
-    def set_current(self, new: Context) -> Context | None:
+    def set_current(self, new: TreeNode) -> Context | None:
+        if self._CURRENT_ is not None:
+            self._CURRENT_.focus('unfocus')
         self._CURRENT_ = new
-        self._CURRENT_.node.focus = 'selected'
 
     def app_handler(self, record: Record):
         if record.type == "KEY":
             key = record.key
             if key == "tab":
-                prv = self._CHILDREN_[self.focus]
-                prv.node.focus = "unfocus"
+                prv = self.focusable[self.focused]
+                prv.focus("unfocus")
                 self.event(Command.Updated, prv)
-                log.write(f"{prv.node.focus}: {self.focus} to ")
 
-                self.focus = (self.focus + 1) % len(self._CHILDREN_)
-                nxt = self._CHILDREN_[self.focus]
-                nxt.node.focus = "focus"
-                log.write(f"{self._CHILDREN_[self.focus].node.focus}: {self.focus}\n")
-                log.flush()
+                self.focused = (self.focused + 1) % len(self.focusable)
+                nxt = self.focusable[self.focused]
+                nxt.focus("focus")
                 return (Command.Updated, nxt)
             elif key == "shift+tab":
-                log.write(f"{self.focus} to {(self.focus + 1) % len(self._CHILDREN_)} with ")
-                self._CHILDREN_[self.focus].node.focus = "unfocus"
-                self.event(Command.Updated, self._CHILDREN_[self.focus])
-                self.focus = (self.focus - 1) % len(self._CHILDREN_)
-                self._CHILDREN_[self.focus].node.focus = "focus"
-                log.write(f"{self._CHILDREN_[self.focus].node.focus}\n")
-                log.flush()
-                return (Command.Updated, self._CHILDREN_[self.focus])
+                self.focusable[self.focused].focus("unfocus")
+                self.event(Command.Updated, self.focusable[self.focused])
+                self.focused = (self.focused - 1) % len(self.focusable)
+                self.focusable[self.focused].focus("focus")
+                return (Command.Updated, self.focusable[self.focused])
             elif key == "enter":
-                log.write(f"selected {self.focus}\n")
-                log.flush()
-                self._CHILDREN_[self.focus].node.focus = "selected"
-                self._CURRENT_ = self._CHILDREN_[self.focus]
-                return (Command.Updated, self._CHILDREN_[self.focus])
+                return (Command.Select, self.focusable[self.focused])
 
     def handler(self, record: Record, _: dict) -> bool:
         if self.current is None:
             data = self.app_handler(record)
-        elif self.current.node.event_handler is None:
-            data = default_handler(self.current, self.current.node, record, self.current.node.state)
+        elif self.current.handler is None:
+            data = default_handler(self.current, record)
         else:
-            data = self.current.node.event_handler(
-                    self.current,
-                    self.current.node,
-                    record,
-                    self.current.node.state
-            )
+            data = self.current.handler(self.current, record)
 
         if data is None:
             current = self.current or Context(Node())
-            node = current.node if current is not None else None
-            state = node.state if node is not None else None
-            data = self._global_handler_(
-                current,
-                node,
-                record,
-                state 
-            )
+            data = self._global_handler_(current, record)
 
         if data is None:
             return True
@@ -175,50 +228,11 @@ class Application:
 
         return True
 
-    def event(self, command: Command, context: Context | None = None):
+    def event(self, command: Command, context: TreeNode | None = None):
         try:
             self.event_bus.put((command, context), block=False)
         except Full:
             pass
-
-    def _handle_command_(self):
-        while True:
-            try:
-                command, context = self.event_bus.get(block=False)
-                if command == Command.Updated:
-                    context.node.render()
-                    self.buffer.write()
-                elif command == Command.ScrollUp:
-                    context.node.scroll_up()
-                    context.node.render()
-                    self.buffer.write()
-                elif command == Command.ScrollDown:
-                    context.node.scroll_down()
-                    context.node.render()
-                    self.buffer.write()
-                elif command == Command.ScrollLeft:
-                    context.node.scroll_left()
-                    context.node.render()
-                    self.buffer.write()
-                elif command == Command.ScrollRight:
-                    context.node.scroll_right()
-                    context.node.render()
-                    self.buffer.write()
-                elif command == Command.Deselect:
-                    # PERF: Make this pert parent object so it works with nesting
-                    context.node.focus = "focus"
-                    context.node.render()
-                    self._CURRENT_ = context.parent
-                    if self._CURRENT_ is None:
-                        self.render()
-                    else:
-                        self._CURRENT_.render()
-                        self.buffer.write()
-                elif command == Command.Quit:
-                    # Terminal reset codes goes here
-                    return
-            except Empty:
-                pass
 
     def layout(self):
         pass
@@ -228,10 +242,26 @@ class Application:
         for context in self._CHILDREN_:
             context.init(self.buffer)
 
-        if self._CURRENT_ is None and len(self._CHILDREN_) > 0:
-            self._CHILDREN_[0].node.focus = 'focus'
-            self._CHILDREN_[0].node.render()
-            self.focus = 0
+        def extract_selectable(children: list[TreeNode]) -> list[TreeNode]:
+            result = []
+            for child in children:
+                if isinstance(child, TreeParent):
+                    result.extend(extract_selectable(child._CHILDREN_))
+                elif isinstance(child, TreeNode) and child.get('focus') != 'static':
+                    result.append(child)
+            return result
+
+        self.focusable = extract_selectable(self._CHILDREN_)
+        for focusable in self.focusable:
+            focusable.focus('unfocus')
+
+        if self._CURRENT_ is None:
+            if len(self.focusable) == 1:
+                self.focused = 0 
+                self.set_current(self.focusable[0])
+                self._CURRENT_.focus('focus')
+            elif len(self.focusable) > 1:
+                self.focusable[0].focus('focus')
 
     def render(self):
         for child in self._CHILDREN_:
@@ -241,103 +271,248 @@ class Application:
     def run(self):
         self.init()
         self.render()
-        with Listener(
-            on_event=self.handler,
-            on_interrupt=lambda: self.event_bus.put((Command.Quit, None), block=False),
-        ) as listener:
-            self._handle_command_()
-            listener.join()
 
-    
-class Context:
-    _NODE_: Node
-    _PARENT_: Application | Context | None
-    _CHILDREN_: list[Context]
+        self.input_watcher.start()
+        self.updater.start()
+        self.input_watcher.join()
+        self.updater.join()
 
-    def __init__(self, node: Node, *children: Context) -> None:
-       self._NODE_ = node
-       self._PARENT_ = None
-       self._CHILDREN_ = list(children)
-       for child in self._CHILDREN_:
-           child._PARENT_ = self
+@runtime_checkable
+class TreeNode(Protocol):
+    _PARENT_: TreeParent | Application | None
+    def __init__(self, parent: TreeParent | None = None) -> None:
+        self._PARENT_ = parent
 
-    def __enter__(self) -> ContextBuilder:
-        return ContextBuilder(self)
-
-    def __exit__(self, *_):
-        pass
-
-    def event(self, command: Command, context: Context | None):
+    def event(self, command: Command, context: TreeNode | None):
         if self._PARENT_ is not None:
             self._PARENT_.event(command, context)
 
-    def render(self):
-        self.node.render()
-
     @property
-    def node(self) -> Node:
-        return self._NODE_
-
-    @property
-    def parent(self) -> Context | None:
-        return self._PARENT_ if not isinstance(self._PARENT_, Application) else None
+    def handler(self) -> EventHandler:
+        raise NotImplementedError
 
     @staticmethod
-    def _compare_(actual, expected) -> bool:
+    def compare(actual, expected) -> bool:
         if isinstance(expected, dict):
             for key, value in expected.items():
                 if not hasattr(actual, key):
                     return False
                 attr = getattr(actual, key)
-                if not Context._compare_(attr, value):
+                if not TreeNode.compare(attr, value):
                     return False
         else:
-            if not actual == expected:
-                return False
+            return actual == expected
         return True
 
-    def init(self, buffer: Buffer):
-        # PERF: Different based on node type
-        self.node._BUFFER_ = buffer
-        
-    def sibling(self, compare: dict | None = None) -> Context | None:
-        if self._PARENT_ is not None:
+    def get_scroll(self) -> tuple[int, int]:
+        return (0, 0)
+    def set(self, key: str, value: Any):
+        return
+    def get(self, key: str, default: Any | None = None):
+        return default
+    def scroll(self, direction: Literal['up', 'down', 'left', 'right']):
+        return
+
+    @overload
+    def sibling(self, compare: dict | None = None, *_, node: Literal['context'] = 'context') -> Context  | None:
+        ...
+    @overload
+    def sibling(self, compare: dict | None = None, *_, node: Literal['section'] = 'section') -> Section | None:
+        ...
+    @overload
+    def sibling(self, compare: dict | None = None, *_, node: Literal[''] = '') -> Section | Context | None:
+        ...
+    def sibling(
+        self,
+        compare: dict | None = None,
+        *_,
+        node: Literal['context', 'section', ''] = ''
+    ) -> Context | Section | None:
+        _type = (Section, Context)
+        if node != '':
+            _type = Context if node == 'context' else Section
+
+        if self._PARENT_ is not None and isinstance(self._PARENT_, (Section, Application)):
             index = self._PARENT_._CHILDREN_.index(self)
             if compare is None:
-                return self._PARENT_._CHILDREN_[index+1] if index+1 < len(self._PARENT_._CHILDREN_) else None
+                children = [child for child in self._PARENT_._CHILDREN_[index+1:] if isinstance(child, _type)]
+                return children[0] if len(children) > 0 else None
             else:
-                children = self._PARENT_._CHILDREN_[:index] + self._PARENT_._CHILDREN_[index+1:]
+                children = [
+                    child for child in self._PARENT_._CHILDREN_[:index] + self._PARENT_._CHILDREN_[index+1:]
+                    if isinstance(child, _type)
+                ]
                 for child in children:
-                    if Context._compare_(child.node, compare):
+                    if child.is_match(compare):
                         return child
                 return None
         return None
+    def __exit__(self, _et, ev, _etb):
+        if ev is not None:
+            raise ev
 
-    def child(self, compare: dict) -> Context | None:
-        if compare is None:
-            return None if len(self) == 0 else self._CHILDREN_[0]
+    @property
+    def parent(self) -> TreeParent | None:
+        return self._PARENT_ if not isinstance(self._PARENT_, Application) else None
+    @abstractmethod
+    def focus(self, focus: Literal['normal', 'unfocus', 'focus', 'selected'], depth: int = 1):
+        raise NotImplementedError
+    @abstractmethod
+    def is_match(self, compare: dict) -> bool:
+        raise NotImplementedError
+    @abstractmethod
+    def set_buffer(self, buffer: Buffer | None):
+        raise NotImplementedError
+    @abstractmethod
+    def render(self):
+        raise NotImplementedError
+    @abstractmethod
+    def init(self, buffer: Buffer):
+        raise NotImplementedError
+    def __enter__(self):
+        ...
 
+@runtime_checkable
+class TreeParent(TreeNode, Protocol):
+    _CHILDREN_: list[TreeNode]
+
+    def __init__(self, *children: TreeNode, parent: TreeParent | None = None) -> None:
+        super().__init__(parent)
+        self._CHILDREN_ = list(children)
         for child in self._CHILDREN_:
-            if Context._compare_(child.node, compare):
+            child._PARENT_ = self
+
+    @overload
+    def child(self, compare: dict | None = None, *_, node: Literal['context'] = 'context') -> Context | None:
+        ...
+    @overload
+    def child(self, compare: dict | None = None, *_, node: Literal['section'] = 'section') -> Section | None:
+        ...
+    @overload
+    def child(self, compare: dict | None = None, *_, node: Literal[''] = '') -> Section | Context | None:
+        ...
+    def child(
+        self,
+        compare: dict | None = None,
+        *_,
+        node: Literal['context', 'section', ''] = '',
+    ) -> Context | Section | None:
+        _type = (Section, Context)
+        if node != '':
+            _type = Context if node == 'context' else Section
+        children = [child for child in self._CHILDREN_ if isinstance(child, _type)]
+
+        if compare is None:
+            return None if len(children) == 0 else children[0]
+
+        for child in children:
+            if isinstance(child, Section) and TreeNode.compare(child, compare):
+                return child 
+            elif isinstance(child, Context) and TreeNode.compare(child.node, compare):
                 return child
         return None
 
     def __len__(self) -> int:
-        return len(self._CHILDREN_)
+        return  len(self._CHILDREN_)
+
+class Context(TreeNode):
+    _NODE_: Node
+
+    def __init__(self, node: Node, parent: TreeParent | None = None) -> None:
+       super().__init__(parent=parent)
+       self._NODE_ = node
+       self.mutex = threading.Lock()
+
+    def handler(self, context: TreeNode, record: Record) -> tuple | None:
+        if self.node.style.overflow[0] == 'scroll' or self.node.style.overflow[1] == 'scroll':
+            scroll_node(context, record)
+        if self.node.event_handler is None:
+            return default_handler(context, record)
+        return self.node.event_handler(context, record)
+
+    @property
+    def width(self) -> int:
+        with self.mutex:
+            return self.node.width
+
+    @property
+    def height(self) -> int:
+        with self.mutex:
+            return self.node.height
+
+    def write(self, *text: str, sep: str = " "):
+        with self.mutex:
+            self.node.write(*text, sep=sep)
+
+    def format(self, *text: str, sep: str = " ", mar: bool = True):
+        with self.mutex:
+            self.node.format(*text, sep=sep, mar=mar)
+
+    def clear(self):
+        with self.mutex:
+            self.node.clear()
+
+    @property
+    def node(self) -> Node:
+        return self._NODE_
+
+    def get_scroll(self) -> tuple[int, int]:
+        with self.mutex:
+            return self.node.scroll_x, self.node.scroll_y
+
+    def set(self, key: str, value: Any):
+        # Gatekeep what values can be set
+        if key not in ['title', 'style']:
+            return
+
+        if hasattr(self.node, key):
+            setattr(self.node, key, value)
+
+    def get(self, key: str, default: Any | None = None):
+        if key not in ['title', 'style', 'focus', 'selected']:
+            return default
+        if hasattr(self.node, key):
+            with self.mutex:
+                return getattr(self.node, key)
+        return default
+        
+    def scroll(self, direction: Literal['up', 'down', 'left', 'right']):
+        with self.mutex:
+            if direction == "up":
+                self.node.scroll_up()
+            elif direction == "down":
+                self.node.scroll_down()
+            elif direction == "left":
+                self.node.scroll_left()
+            elif direction == "right":
+                self.node.scroll_right()
+
+    def focus(self, focus: Literal['normal', 'unfocus', 'focus', 'selected'], _: int = 1):
+        with self.mutex:
+            if self.node.focus != 'static':
+                self.node.focus = focus
+
+    def set_buffer(self, buffer: Buffer | None):
+        with self.mutex:
+            self.node._BUFFER_ = buffer
+
+    def render(self):
+        with self.mutex:
+            self.node.render()
+
+    def init(self, buffer: Buffer):
+        self.set_buffer(buffer)
+
+    def is_match(self, compare: dict) -> bool:
+        with self.mutex:
+            return TreeNode.compare(self.node, compare)
+
+    def __enter__(self) -> ContextBuilder:
+        return ContextBuilder(self)
 
 class ContextBuilder:
     def __init__(self, context: Context):
         self._context_ = context
-
-    def add(self, node: Node):
-        self._context_._CHILDREN_.append(Context(node))
-
-    def extend(self, *nodes: Node):
-        self._context_._CHILDREN_.extend(Context(node) for node in nodes)
-
-    def new(self, *_, **kwargs: Unpack[NodeArgs]) -> ContextBuilder:
-        self._context_._CHILDREN_.append(Context(Node(**kwargs)))
-        return ContextBuilder(self._context_._CHILDREN_[-1])
 
     @property
     def node(self) -> Node:
@@ -351,6 +526,22 @@ class ContextBuilder:
     def handler(self, new: EventHandler | None):
         self._context_.node.event_handler = new
 
+    def write(self, *text: str, sep: str = " "):
+        self._context_.node.write(*text, sep=sep)
+
+    def format(self, *text: str, sep: str = " ", mar: bool = True):
+        self._context_.node.format(*text, sep=sep, mar=mar)
+
+    def clear(self):
+        self._context_.node.clear()
+
+    @property
+    def width(self) -> int:
+        return self._context_.width
+
+    @property
+    def height(self) -> int:
+        return self._context_.height
 
 class Edges(Enum):
     single = ("─", "│")
@@ -401,9 +592,7 @@ class Styles(TypedDict, total=False):
     text_align: AlignType 
     overflow: HOverflowType | tuple[HOverflowType, VOverflowType]
     align_items: AlignType
-    padding: int | tuple[int, int] | tuple[int, int, int, int]
-    margin: int | tuple[int, int] | tuple[int, int, int, int]
-    item_type: Literal['text', 'select']
+    padding: SizeType 
 
 
 class Style:
@@ -412,17 +601,15 @@ class Style:
         "overflow",
         "align_items",
         "padding",
-        "margin",
         "border",
         "border_color",
         "border_corners",
         "border_edges",
-        "item_type"
     )
 
     def __init__(self, **styles: Unpack[Styles]):
-        self.border = styles.get("border", False)
-        self.border_color = styles.get("border_color", "white")
+        self.border = styles.get("border", True)
+        self.border_color = styles.get("border_color", "yellow")
         self.border_corners = styles.get("border_corners", "single")
         if isinstance(self.border_corners, str):
             self.border_corners = tuple([self.border_corners for _ in range(4)])
@@ -448,8 +635,6 @@ class Style:
 
         self.align_items: AlignType = styles.get("align_items", "start")
         self.padding: tuple[int, int, int, int] = _norm_sizing(styles.get("padding", 0))
-        self.margin: tuple[int, int, int, int] = _norm_sizing(styles.get("margin", 0))
-        self.item_type: Literal['text', 'select'] = styles.get("item_type", 'text')
 
     def copy(self) -> Style:
         """Copyt the current styles."""
@@ -460,8 +645,10 @@ class Style:
         return f"{{{values}}}"
 
 
-def calc_perc(val: int | float, total: int) -> int:
-    if isinstance(val, float):
+def calc_size(val: int | float | Callable[[int], int], total: int) -> int:
+    if callable(val):
+        val = val(total)
+    elif isinstance(val, float):
         val = round(val * total)
     return val
 
@@ -474,17 +661,17 @@ class Rect:
 
     def __init__(
         self,
-        x: int | float,
-        y: int | float,
-        w: int | float,
-        h: int | float,
+        x: int | float | Callable[[int], int],
+        y: int | float | Callable[[int], int],
+        w: int | float | Callable[[int], int],
+        h: int | float | Callable[[int], int],
         mw: int,
         mh: int
     ):
-        self.left = min(calc_perc(x, mw), mw - 1)
-        self.right = min(self.left + calc_perc(w, mw), mw)
-        self.top = min(calc_perc(y, mh), mh - 1)
-        self.bottom = min(self.top + calc_perc(h, mh), mh)
+        self.left = min(calc_size(x, mw), mw - 1)
+        self.right = min(self.left + calc_size(w, mw), mw)
+        self.top = min(calc_size(y, mh), mh - 1)
+        self.bottom = min(self.top + calc_size(h, mh), mh)
 
     @property
     def width(self) -> int:
@@ -504,7 +691,7 @@ class Rect:
 
 
 def _norm_sizing(
-    sizing: int | tuple[int, int] | tuple[int, int, int, int]
+    sizing: SizeType 
 ) -> tuple[int, int, int, int]:
     """Sizing left, top, right, and bottom respectively.
 
@@ -631,12 +818,14 @@ class Line:
         return repr(self.pixels)
 
 class NodeArgs(TypedDict, total=False):
-    pos: tuple[int | float, int | float]
-    size: tuple[int | float, int | float]
+    id: str
+    pos: tuple[int | float, int | float | Callable[[int], int]]
+    size: tuple[int | float, int | float | Callable[[int], int]]
     title: str
     style: Style
     event_handler: EventHandler
     state: dict
+    contains: Literal['text', 'list']
 
 class Node:
     def __init__(
@@ -645,22 +834,28 @@ class Node:
         *_,
         **kwargs: Unpack[NodeArgs],
     ):
+        self.id = kwargs.get("id", None)
         self.style = kwargs.get('style', Style())
         self.title = kwargs.get('title', "")
+
         self.size = kwargs.get('size', (1.0, 1.0))
         self.pos = kwargs.get('pos', (0, 0))
+
         self.event_handler: EventHandler | None = kwargs.get('event_handler', None)
+        self.contains: Literal['text', 'list'] = kwargs.get('contains', 'text')
         
         self.state = kwargs.get('state', {}) or {}
 
         self._BUFFER_ = buffer
-        self.focus: Literal['unfocus', 'focus', 'selected'] = "unfocus"
+        self.focus: Literal['static', 'normal', 'unfocus', 'focus', 'selected'] = "normal"
+        if self.style.overflow[0] != "scroll" and self.style.overflow[1] != "scroll":
+            self.focus = 'static'
         self.text: str = ""
         self.scroll_y = 0
         self.scroll_x = 0
 
     def push(self, *text: str, sep: str = " "):
-        """Write a string of text to the node. If the Style{'item_type': 'select'} is set
+        """Write a string of text to the node. If `contains='list'` is set
         every call to `push` will add the text to the previous entry. All new line sequences (`\\n`)
         are preserved.
 
@@ -672,7 +867,7 @@ class Node:
         self.text += sep.join(text).replace("\n", "\r")
 
     def write(self, *text: str, sep: str = " "):
-        """Write a string of text to the node. If the Style{'item_type': 'select'} is set
+        """Write a string of text to the node. If `contains='list'` is set
         every call to `write` becomes an entry in the selection list. All new line sequences (`\\n`)
         are preserved.
 
@@ -684,7 +879,7 @@ class Node:
         self.text += '\n' + sep.join(text).replace("\n", "\r")
 
     def format(self, *text: str, sep: str = " ", mar: bool = True):
-        """Adding a formatted string of text to the node. If the Style{'item_type': 'select'} is set
+        """Adding a formatted string of text to the node. If `contains='list'` is set
         every call to `format` becomes an entry in the selection list. All new line sequences (`\\n`)
         are preserved.
 
@@ -699,10 +894,10 @@ class Node:
         self.text += '\n' + Markup.parse(sep.join(text).replace("\n", "\r"), sep=sep, mar=mar)
 
     def entry(self, index: int) -> str | None:
-        """Get a specific entry in the selection list. If Style{'item_type': 'select'} is not set then
+        """Get a specific entry in the selection list. If `contains='list'` is not set then
         None is returned.
         """
-        if self.style.item_type == "select":
+        if self.contains == "list":
             return self.text.split("\n")[index].replace("\r", "\n")
         return None
 
@@ -753,14 +948,19 @@ class Node:
             )
 
             style = _AnsiStyle()
-            if self.focus == "selected":
+            if self.focus == 'selected':
                 style.style |= S.Bold.value
-                style.fg = f";3{Color.new(self.style.border_color)}"
-            elif self.focus == 'unfocus':
+            if self.focus == 'unfocus':
                 style.fg = f';3{Color.new(243)}'
+                style.style |= S.Bold.value
+            elif self.focus == "focus":
+                style.fg = f';3{Color.new(self.style.border_color)}'
+            # else:
+            #     style.fg = f';3{Color.new(self.style.border_color)}'
 
             if len(buffer) >= 2:
-                (left, top, right, bottom) = self.valid_rect(buffer.width, buffer.height).points()
+                rect = self.rect()
+                (left, top, right, bottom) = rect.points()
                 for row in buffer[top + 1 : bottom]:
                     row[left].set(edges[1], style)
                     row[right - 1].set(edges[3], style)
@@ -773,7 +973,7 @@ class Node:
                     else:
                         buffer[top][i].set(edges[0], style)
 
-                if top + self.size[1] < buffer.height:
+                if top + rect.height <= buffer.height:
                     for i in range(left, right):
                         if i == left:
                             buffer[bottom - 1][i].set(corners[3], style)
@@ -783,13 +983,24 @@ class Node:
                             buffer[bottom - 1][i].set(edges[2], style)
             self._title_(buffer)
 
-    def valid_rect(self, mw: int, mh: int) -> Rect:
+    @property
+    def width(self) -> int:
+        if self._BUFFER_ is not None:
+            return self._BUFFER_.width
+        return 0
+    @property
+    def height(self) -> int:
+        if self._BUFFER_ is not None:
+            return self._BUFFER_.height
+        return 0
+
+    def rect(self) -> Rect:
         """The valid rect the node can write into."""
-        return Rect(*self.pos, *self.size, mw, mh)
+        return Rect(*self.pos, *self.size, self.width, self.height)
 
     def _title_(self, buffer: Buffer):
         """Generate the nodes title."""
-        r = self.valid_rect(buffer.width, buffer.height)
+        r = self.rect()
         (left, top, right, _) = r.points()
         w = r.width
         if (self.style.border and w < 3) or w < 1 or len(self.title) == 0:
@@ -837,8 +1048,8 @@ class Node:
 
         if len(text) > rect.height:
             if self.style.overflow[1] == "scroll":
-                buffer[rect.bottom-1][rect.right].set('⮟')
-                buffer[rect.top][rect.right].set('⮝')
+                buffer[rect.bottom-1][rect.right-1].set('⮟')
+                buffer[rect.top][rect.right-1].set('⮝')
 
         lines = []
         if len(text) == 0:
@@ -848,12 +1059,12 @@ class Node:
         else:
             # if select then bold selected and have padded scrolling
             # else normal scroll
-            if self.style.item_type == 'text':
+            if self.contains == 'text':
                 lines = flatten_norm(text)
                 maxv = len(lines) - rect.height - 1
                 self.scroll_y = clamp(self.scroll_y, 0, maxv)
                 lines = lines[self.scroll_y:]
-            elif self.style.item_type == 'select':
+            elif self.contains == 'list':
                 self.scroll_y = clamp(self.scroll_y, 0, len(text) - 1)
 
                 previous = flatten_norm(text[:self.scroll_y])
@@ -872,6 +1083,8 @@ class Node:
 
                 for char in text[self.scroll_y].pixels:
                     char.style.style |= S.Bold.value
+                    if self.focus == "selected":
+                        char.style.fg = ";37"
 
                 lines = [*previous[lower:], *text[self.scroll_y].normalized,*_next[:upper]]
 
@@ -892,7 +1105,7 @@ class Node:
         return lines
 
     def _text_(self, buffer: Buffer):
-        rect = self.valid_rect(buffer.width, buffer.height)
+        rect = self.rect()
         if self.style.border:
             rect.left += 1
             rect.top += 1
@@ -900,9 +1113,9 @@ class Node:
             rect.bottom -= 1
         (pl, pt, pr, pb) = self.style.padding
         rect.left += pl
-        rect.right += pr
+        rect.right -= pr
         rect.top += pt
-        rect.bottom += pb
+        rect.bottom -= pb
 
         text = []
         for line in self.text.strip().split("\n"):
@@ -934,12 +1147,109 @@ class Node:
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(style={self.style!r})"
 
+class Section(TreeParent):
+    """A smaller organized section of the total application buffer. This object can be nested
+    to have smaller sections of the given section. All nested Nodes reference their sizing from
+    this section.
+    """
+
+    def __init__(
+        self,
+        *children: TreeNode,
+        pos: tuple[int, int] = (0, 0),
+        size: tuple[int, int] = (0, 0),
+        padding: SizeType,
+        buffer: Buffer | None = None,
+        parent: TreeParent | None = None,
+    ) -> None:
+        self._BUFFER_ = buffer
+        self.padding = _norm_sizing(padding)
+        self.size = size
+        self.pos = pos
+        self.focused = 0
+        self.focusable = []
+        super().__init__(*children, parent=parent)
+
+    def handler(self, context: TreeNode, record: Record) -> tuple | None:
+        return
+        # if record.type == "KEY" and len(self.focusable) > 0:
+        #     key = record.key
+        #     if key == "tab":
+        #         prv = self.focusable[self.focused]
+        #         prv.focus("unfocus")
+        #         self.event(Command.Updated, prv)
+        #
+        #         self.focused = (self.focused + 1) % len(self.focusable)
+        #         nxt = self.focusable[self.focused]
+        #         nxt.focus("focus")
+        #         return (Command.Updated, nxt)
+        #     elif key == "shift+tab":
+        #         self.focusable[self.focused].focus("unfocus")
+        #         self.event(Command.Updated, self.focusable[self.focused])
+        #         self.focused = (self.focused - 1) % len(self.focusable)
+        #         self.focusable[self.focused].focus("focus")
+        #         return (Command.Updated, self.focusable[self.focused])
+        #     elif key == "enter":
+        #         self.focusable[self.focused].focus("selected")
+        #         return (Command.Select, context)
+
+    def focus(self, focus: Literal['normal', 'unfocus', 'focus', 'selected'], depth: int = 1):
+        if depth <= 0:
+            return
+
+        for child in self.focusable:
+           child.focus(focus, depth-1)
+
+    def is_match(self, compare: dict) -> bool:
+        return TreeNode.compare(self, compare)
+
+    def set_buffer(self, buffer: Buffer | None):
+        # PERF: Set buffer size based on padding, size, and position
+        if buffer is not None:
+            rect = Rect(*self.pos, *self.size, buffer.width, buffer.height)
+            self._BUFFER_ = buffer.sub(rect.left, rect.top, *rect.dims())
+        else:
+            self._BUFFER_ = None
+            for child in self._CHILDREN_:
+                child.set_buffer(self._BUFFER_)
+
+    def render(self):
+        for child in self._CHILDREN_:
+            child.render()
+
+    def init(self, buffer: Buffer):
+        self.focusable.clear()
+        for child in self._CHILDREN_:
+            if child.get('focus') != 'static':
+                self.focusable.append(child)
+        self.set_buffer(buffer)
+
+    def __enter__(self):
+        return SectionBuilder(self) 
+
+class SectionBuilder:
+    def __init__(self, section: Section):
+        self._section_ = section 
+
+    def context(self, *_, **kwargs: Unpack[NodeArgs]) -> Context:
+        new = Context(Node(**kwargs))
+        new.set_buffer(self._section_._BUFFER_)
+        self._section_._CHILDREN_.append(new)
+        new._PARENT_ = self._section_
+        return new
+
+    def section(self, *_, pos=(0, 0), size=(1.0, 1.0), padding: SizeType = 0) -> Section:
+        new = Section(pos=pos, size=size, padding=padding)
+        new.set_buffer(self._section_._BUFFER_)
+        self._section_._CHILDREN_.append(new)
+        new._PARENT_ = self._section_
+        return new
 
 def __over_time__():
     buffer = Buffer()
 
     style = Style(border=True, border_color="cyan", text_align="end", align_items="end")
-    node = Node(buffer, pos=(0.25, 0.25), size=(0.5, 0.5), style=style)
+    node = Node(buffer=buffer, pos=(0.25, 0.25), size=(0.5, 0.5), style=style)
 
     message = [
         "[red]H",
@@ -982,7 +1292,7 @@ def __standard__():
     style = Style(
         border=True, border_color="cyan", text_align="center", align_items="center"
     )
-    node = Node(buffer, size=(1.0, 1.0), style=style, title="Test Node")
+    node = Node(buffer=buffer, size=(1.0, 1.0), style=style, title="Test Node")
     node.write("[red]Hello, [green]world[/]!")
     node.render()
     buffer.write()
@@ -1014,11 +1324,11 @@ def __multiple__():
     style3.text_align = "start"
     style3.align_items = "start"
 
-    node1 = Node(buffer, size=(0.33, 0.25), style=style1, title="Node 1")
+    node1 = Node(buffer=buffer, size=(0.33, 0.25), style=style1, title="Node 1")
     node1.write("Hello, node 1!")
-    node2 = Node(buffer, pos=(0.33, 0), size=(0.66, 1.0), style=style2, title="Node 2")
+    node2 = Node(buffer=buffer, pos=(0.33, 0), size=(0.66, 1.0), style=style2, title="Node 2")
     node2.write("Hello, node 2!")
-    node3 = Node(buffer, pos=(0, 0.25), size=(0.33, 0.75), style=style3, title="Node 3")
+    node3 = Node(buffer=buffer, pos=(0, 0.25), size=(0.33, 0.75), style=style3, title="Node 3")
     node3.write("Hello, node 3!")
     nodes = [node1, node2, node3]
     for node in nodes:
@@ -1031,42 +1341,128 @@ def __scrolling__():
         Deselect -> Go to parents handlers if not None 
     """
     with Application() as app:
-        with app.new(
+        with app.context(
+            id="selector",
             size=(20, 10),
             style=Style(
                 border= True,
-                item_type = 'select',
                 overflow =  ('scroll', 'scroll')
             ),
             title="Scrolling Node",
+            contains="list"
         ) as selector:
-            def handler(context: Context, node, event: Record, state):
+            def handler(context: TreeNode, event: Record):
                 if event.type == "KEY":
                     key = event.key
                     if key == "j" or key == "down":
-                        node.title = "down"
+                        context.set("title", "down")
                     elif key == "k" or key == "up":
-                        node.title = "up"
+                        context.set("title", "up")
                     if key == "h" or key == "left":
-                        node.title = "left"
+                        context.set("title", "left")
                     elif key == "l" or key == "right":
-                        node.title = "right"
+                        context.set("title", "right")
                     elif key == "enter":
                         message = context.sibling({"id": "message"})
                         if message is not None:
-                            message.node.write(f"{node.scroll_y}: selected")
+                            message.node.clear()
+                            message.node.write(f"{context.get_scroll()[1]}: selected")
                             return (Command.Updated, message)
-                return default_handler(context, node, event, state)
+                scroll_node(context, event)
 
             selector.handler = handler
             for i in range(20):
                 selector.node.write(f"{i}: Sample text {'-' * 5}\n  preserve newline")
 
-        app.add(Node(
+        app.context(
+            id="message",
             pos=(0, 10),
             size=(20, 3),
             style=Style(border = True)
-        ))
+        )
+
+class AppState:
+    def __init__(self, app: Application) -> None:
+       self._state_ = {}
+       self._app_ = app
+
+    def get(self, key: str, default: Any | None = None):
+        return self._state_.get(key, default)
+
+    def set(self, key: str, value: Any):
+        self._state_[key] = value
+
+    def find(self, compare: dict[Literal['id'], str]) -> Context | None:
+        def flatten_context(children: list[TreeNode]) -> list[Context]:
+            result = []
+            for child in children:
+                if isinstance(child, TreeParent):
+                    result.extend(flatten_context(child._CHILDREN_))
+                elif isinstance(child, TreeNode):
+                    result.append(child)
+            return result
+
+        contexts = flatten_context(self._app_._CHILDREN_)
+        for context in contexts:
+            if context.is_match(compare):
+                return context
+        return None
+
+def __applicaiton__():
+    def update(dt: float, app: AppState):
+        total = app.get('total', float((8*60)+35))
+        prgs = app.get('progress', 0.0)
+        if floor(prgs) >= floor(prgs + dt):
+            if (playing := app.find({'id': 'playing'})) is not None:
+                message = f'Hi Ren ~ Ren ({int(prgs)//60}:{str(int(prgs)%60).rjust(2, "0")}/{int(total)//60}:{str(int(total)%60).rjust(2, "0")})'
+                
+                playing.node.clear()
+                step = playing.width / total
+                progress = min(round((prgs+dt) * step), playing.width)
+                missing = playing.width - progress
+
+                playing.write(message)
+                playing.format(f"[green]{'█'*progress}[/]{'░'*missing}")
+                playing.event(Command.Updated, playing)
+        app.set('progress', (prgs + dt) % total)
+
+    with Application(update=update) as app:
+        with app.section(size=(1.0, lambda mx: mx-4)) as top:
+            with top.section(size=(0.3, 1.0)) as left:
+                with left.context(
+                    id="titlebar",
+                    size=(1.0, 0.3),
+                    style=Style(text_align='center', align_items='center', overflow=('wrap', 'hidden'), border_color="red"),
+                ) as titlebar:
+                    titlebar.write("Hello World")
+
+                with left.context(
+                    id="playlists",
+                    title="Playlists",
+                    pos=(0, 0.3),
+                    size=(1.0, 0.9),
+                    style=Style(overflow="scroll", padding=(1, 0)),
+                    contains='list'
+                ) as titlebar:
+                    for i in range(20):
+                        titlebar.write(f"playlist {i}")
+
+            top.context(
+                id="main",
+                pos=(0.3,0),
+                size=(.7, 1.0),
+                title="Main",
+            )
+        with app.context(
+            id="playing",
+            title="Now Playing",
+            pos=(0, lambda mx: mx-4),
+            size=(1.0, 4),
+            style=Style(align_items="center", overflow='hidden', padding=(1, 0)),
+        ) as playing:
+            message = 'Hi Ren ~ Ren (0:00/8:35)'
+            playing.write(message)
+            playing.write('░'*(playing.width))
 
 if __name__ == "__main__":
     # __over_time__()
@@ -1074,11 +1470,15 @@ if __name__ == "__main__":
     # input()
     # __multiple__()
     # input()
+    #__scrolling__()
     try:
-        log = open("log.txt", "+w")
-        __scrolling__()
+        # log = open("log.txt", "+w", encoding="utf-8")
+        __applicaiton__()
+        # ctx = Context(Node(id='playing'))
+        # print(ctx.is_match({'id': 'playing'}))
     finally:
-        log.close()
+        pass
+        # log.close()
 
 
 SingleDouble = Literal["single", "double"]
@@ -1087,4 +1487,6 @@ EdgeType = Literal["single", "dashed", "dotted", "double"]
 HOverflowType = Literal["wrap", "hidden", "scroll"]
 VOverflowType = Literal["hidden", "scroll"]
 AlignType = Literal['start', 'center', 'end']
-EventHandler = Callable[[Context, Node | None, Record, dict | None], tuple | None]
+EventHandler = Callable[[TreeNode, Record], tuple | None]
+SizeType = int | tuple[int, int] | tuple[int, int, int, int]
+TreeType = Context | Application | Section

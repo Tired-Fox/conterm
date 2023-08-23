@@ -133,18 +133,13 @@ class Markup:
         previous = "text"
         url_open = None
         align = None
-        file = open('markup.txt', "+a", encoding="utf-8")
         for token in tokens:
             if isinstance(token, Macro):
                 cmacro = self.__stash_pop__(cmacro, token)
                 if previous == "macro":
-                    file.write(f'{cmacro!r}+{token!r}=')
                     cmacro += token
                 else:
-                    file.write(f'{token!r}%{cmacro!r}=')
                     cmacro = token % cmacro
-                file.write(repr(cmacro) + "\n")
-                file.flush()
                 previous = "macro"
             else:
                 previous = "text"
@@ -182,7 +177,6 @@ class Markup:
             reset = '\x1b[0m' if mar else ''
             cl = Hyperlink.close if url_open is not None else ''
             output += f"{reset}{cl}"
-        file.close()
         return output
 
     @staticmethod
