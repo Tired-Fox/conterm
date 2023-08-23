@@ -177,7 +177,6 @@ class Listener(Thread):
 
     def run(self):
         try:
-            # while record := InputManager.watch(self._interupt_, self._surpress_) and not self._stop_:
             for record in InputManager.watch(self._interupt_, self._surpress_):
                 if self._stop_.is_set():
                     raise KeyboardInterrupt
@@ -201,7 +200,6 @@ class Listener(Thread):
 
     def stop(self):
         self._stop_.set()
-        self.join()
 
     def join(self):
         """Force exceptions to be thrown in main thread"""

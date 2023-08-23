@@ -11,6 +11,31 @@ else:
 
 modifier_map = {"ctrl": 0, "alt": 1, "shift": 2}
 
+FKeys = {
+    "combos": [
+        ("SHIFT", 2),
+        ("ALT", 3),
+        ("ALT_SHIFT", 4),
+        ("CTRL", 5),
+        ("CTRL_SHIFT", 6),
+        ("CTRL_ALT", 7),
+        ("CTRL_ALT_SHIFT", 8)
+    ],
+    "keys": {
+        "F1": "\x1b[1;{}P",
+        "F2": "\x1b[1;{}Q",
+        "F3": "\x1b[1;{}R",
+        "F4": "\x1b[1;{}S",
+        "F5": "\x1b[15;{}~",
+        "F6": "\x1b[17;{}~",
+        "F7": "\x1b[18;{}~",
+        "F8": "\x1b[19;{}~",
+        "F9": "\x1b[20;{}~",
+        "F10": "\x1b[21;{}~",
+        "F11": "\x1b[23;{}~",
+        "F12": "\x1b[24;{}~",
+    }
+}
 
 class KeyCode:
     """Data structure for all the possible keycodes that are supported."""
@@ -63,12 +88,14 @@ class KeyCode:
             "HOME": "\x1b[H",
             "INSERT": "\x1b[2~",
             "DELETE": "\x1b[3~",
-            "BACKTAB": "\x1b[Z",
+            "SHIFT_TAB": "\x1b[Z",
             # The ALT character in key combinations is the same as ESC
             "ALT": "\x1b",
             "TAB": "\t",
             "ENTER": "\n",
             "RETURN": "\n",
+            "PAGEUP": "\x1b[5~",
+            "PAGEDOWN": "\x1b[6~",
             # Ctrl + Key :note: This removes the ability to also bind shift
             "CTRL_BACKSPACE": "\x08",
             "CTRL_SPACE": "\x00",
@@ -98,6 +125,23 @@ class KeyCode:
             "CTRL_X": "\x18",
             "CTRL_Y": "\x19",
             "CTRL_Z": "\x1a",
+            "F1": "\x1bOP",
+            "F2": "\x1bOQ",
+            "F3": "\x1bOR",
+            "F4": "\x1bOS",
+            "F5": "\x1b[15~",
+            "F6": "\x1b[17~",
+            "F7": "\x1b[18~",
+            "F8": "\x1b[19~",
+            "F9": "\x1b[20~",
+            "F10": "\x1b[21~",
+            "F11": "\x1b[23~",
+            "F12": "\x1b[24~",
+            **{
+                f'{prefix}_{key}': value.format(index)
+                for key, value in FKeys['keys'].items()
+                for prefix, index in FKeys['combos']
+            },
             **KEYS,
         }
 
