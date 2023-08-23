@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
 from enum import Enum
 from os import get_terminal_size
 from re import sub
-from typing import Any, Literal
+from typing import Literal
 
 from .color import Color
 from .util import Hyperlink, strip_ansi
@@ -16,11 +15,6 @@ class Reset:
 
     def __repr__(self) -> str:
         return "RESET"
-
-
-def _cod(condition, one, default: Any = ""):
-    return one if condition else default
-
 
 MOD_CODE_MAP = {
     "Bold": "1",
@@ -116,9 +110,9 @@ CustomMacros = dict[str, Callable[[str], str]]
 
 def diff_url(current, other):
     """Diff URL."""
-    if (current == RESET and isinstance(other, str)) or (
-        isinstance(current, str) and not isinstance(other, str)
-    ):
+    if isinstance(current, str) and not isinstance(other, str):
+        return current
+    if current == RESET and isinstance(other, str):
         return current
     if isinstance(current, str) and isinstance(other, str):
         return f"{Hyperlink.close}{current}"
@@ -174,9 +168,12 @@ class Align:
         p2 = " " * (self._width_ - actual - remain)
         
         style = str(macro) if macro is not None else ''
-        reset = f"\x1b[0m{Hyperlink.close}"
-        if url is not None and url != RESET:
-            style += url
+        reset = f"\x1b[0m"
+        if url is not None:
+            if url != RESET:
+                style += url
+            else:
+                reset += Hyperlink.close
 
         if self._align_ == "<":
             return f"{text}{reset}{p1 + p2}{style}"
@@ -280,7 +277,9 @@ class Macro:
     def __add__(self, other: Macro) -> Macro:
         macro = Macro()
         macro.customs = set([*self.customs, *other.customs])
-        macro.url = other.url or self.url
+        macro.url = other.url 
+        if other.url == RESET and self.url is None:
+            macro.url = self.url
         macro.fg = other.fg or self.fg
         macro.bg = other.bg or self.bg
         macro.mod_open = other.mod_open | self.mod_open
