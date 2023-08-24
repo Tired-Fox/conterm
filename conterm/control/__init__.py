@@ -138,7 +138,6 @@ class InputManager:
 def _void_(*_):
     pass
 
-
 class Listener(Thread):
     """Input event listener"""
 
