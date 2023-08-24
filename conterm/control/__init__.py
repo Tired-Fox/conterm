@@ -174,28 +174,47 @@ class Listener(Thread):
         if evalue is not None:
             raise evalue
 
+    def _handle_(self, record: Record) -> bool:
+        result = self._on_event_(record, self._state_)
+        if result is False:
+            return False
+
+        if record == "KEY":
+            result = self._on_key_(record.key, self._state_)
+            if result is False:
+                return False
+        elif record == "MOUSE":
+            result = self._on_mouse_(record.mouse, self._state_)
+            if result is False:
+                return False
+        return True
+
     def run(self):
-        try:
-            for record in InputManager.watch(self._interupt_, self._surpress_):
-                if self._stop_.is_set():
-                    raise KeyboardInterrupt
+        if not self._surpress_ and not self._interupt_:
+            print(
+                "\x1b[1m[\x1b[33mWARN\x1b[39m]\x1b[22m:",
+                "Exit/Interupt case is not being handled. Make sure to handle exiting the input loop",
+            )
 
-                result = self._on_event_(record, self._state_)
-                if result is False:
+        with InputManager() as console:
+            while not self._stop_.is_set():
+                try:
+                    char = console.getch(self._interupt_)
+                    if char != "":
+                        arrows = list(ARROW.finditer(char))
+                        if len(arrows) > 1:
+                            start = arrows[0].start()
+                            start = char[:start]
+                            for arrow in arrows:
+                                self._handle_(Record(start + arrow.group(0)))
+                        else:
+                            self._handle_(Record(char))
+                except KeyboardInterrupt as error:
+                    self._on_interrupt_()
+                    self.exc = error
                     return
-
-                if record == "KEY":
-                    result = self._on_key_(record.key, self._state_)
-                    if result is False:
-                        return
-
-                elif record == "MOUSE":
-                    result = self._on_mouse_(record.mouse, self._state_)
-                    if result is False:
-                        return
-        except KeyboardInterrupt as error:
-            self._on_interrupt_()
-            self.exc = error
+                except Exception:
+                    continue
 
     def stop(self):
         self._stop_.set()
