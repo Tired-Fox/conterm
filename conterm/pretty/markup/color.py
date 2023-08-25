@@ -1,19 +1,9 @@
 from typing import Literal
 
-
-SYSTEM = {
-    "black": 0,
-    "red": 1,
-    "green": 2,
-    "yellow": 3,
-    "blue": 4,
-    "magenta": 5,
-    "cyan": 6,
-    "white": 7
-}
+from conterm.pretty.markup.color_consts import NamedColor
 
 class Color:
-    type: Literal["rgb", "hex", "xterm", "system"]
+    type: Literal["rgb", "hex", "xterm", "named"]
     value: int = -1
     r: int = -1
     g: int = -1
@@ -43,18 +33,19 @@ class Color:
                 self.value = int(color)
                 self.type = "xterm"
             except Exception as error:
-                if color.lower() not in SYSTEM:
-                    raise ValueError(f"Invalid color value: {color}") from error
+                named = NamedColor.get(color.lower())
+                if named is None:
+                    raise ValueError(f"Invalid named color: {color}") from error
 
-                self.value = SYSTEM[color.lower()]
-                self.type = "system"
+                self.r = named[1][0]
+                self.g = named[1][1]
+                self.b = named[1][2]
+                self.type = "named"
 
     def __color__(self, code) -> str:
         if self.type == "xterm":
             return f"{code}8;5;{self.value}"
-        if self.type == "system":
-            return f"{code}{self.value}"
-        if self.type in ["rgb", "hex"]:
+        if self.type in ["rgb", "hex", "named"]:
             return f"{code}8;2;{self.r};{self.g};{self.b}"
         return ""
 

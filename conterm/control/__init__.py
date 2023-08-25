@@ -164,7 +164,7 @@ class Listener(Thread):
         self.exc = None
         # If the program exits in a odd manner then the thread will
         # also exit
-        super().__init__(name="python_input_listner", daemon=True)
+        super().__init__(name="conterm_input_listner", daemon=True)
 
     def __enter__(self) -> Listener:
         self.start()
